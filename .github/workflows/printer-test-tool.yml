@@ -1,0 +1,40 @@
+name: printer-test-tool
+
+on:
+  push:
+    paths:
+      - "printer_test_tool/**"
+      - ".github/workflows/printer-test-tool.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: printer_test_tool
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+
+  build-exe:
+    needs: test
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: printer_test_tool
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pyinstaller
+      - run: python -m PyInstaller --noconfirm --onefile --windowed --name PrinterTester gui.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PrinterTester-windows
+          path: printer_test_tool/dist/PrinterTester.exe
