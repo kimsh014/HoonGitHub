@@ -768,7 +768,7 @@ class App(tk.Tk):
             if kind == "burst_pat":
                 return engine.act_burst_pattern(s, lab, a[1], a[2], task)
             if kind == "reconnect":
-                return engine.act_reconnect(s, lab, params["n"], task, a[2])
+                return engine.act_reconnect(s, lab, params["n"], task, a[2], confirm=self.ask_main)
             if kind == "status":
                 return engine.act_status(s, lab, task)
             if kind == "monitor":
@@ -1407,7 +1407,22 @@ class PrinterPanel:
                 v["state"].set("미연결")
             else:
                 v["state"].set("응답 없음")
-                messagebox.showwarning(APP_TITLE, r.get("summary", ""))
+                if r.get("summary", "").startswith("중지") or "열 수 없습니다" in r.get("summary", ""):
+                    messagebox.showwarning(APP_TITLE, r.get("summary", ""))
+                    return
+                baud = simpledialog.askstring(
+                    APP_TITLE,
+                    "프린터 상태 응답이 없습니다 (프린터→PC 방향 무응답: 케이블 RX 결선·프린터 설정 확인 필요).\n\n"
+                    "속도별로 'BAUD ____ : ABC 123 test OK' 한 줄씩 인쇄했습니다.\n"
+                    "글자가 깨끗하게 찍힌 줄의 속도를 입력하면 그 속도·흐름제어 없음으로 연결합니다.\n"
+                    "(아무 줄도 안 나왔으면 [취소] — 포트·케이블·프린터 인터페이스 설정 확인)",
+                    initialvalue="9600", parent=app)
+                if baud and baud.strip().isdigit():
+                    v["baud"].set(baud.strip())
+                    v["flow"].set("없음")
+                    if self.connect(iface):
+                        app.log(f"[{cid_}] 단방향 연결로 설정 ({baud}bps, 흐름제어 없음) — 인쇄는 되지만 상태 조회·"
+                                "자동 전원 감지는 되지 않습니다(에이징은 인쇄만으로 진행, 재연결 시험은 수동 확인 모드)")
         app.start_task(f"통신 진단 {port}", [cid_],
                        lambda task: engine.act_diagnose(port, task, app.log, fmt), done)
 

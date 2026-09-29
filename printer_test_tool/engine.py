@@ -319,7 +319,7 @@ def probe(tr):
         return False
 
 
-def act_reconnect(session, label, cycles, cancel, long_print_first=False, timeout_s=3600):
+def act_reconnect(session, label, cycles, cancel, long_print_first=False, timeout_s=3600, confirm=None):
     """분리→재연결(또는 전원 OFF→ON)을 감지해 매 재연결마다 인쇄로 확인.
 
     핫플러그(U05), 케이블 분리 복구(R06), BT 재연결(T04/T05), 전원 반복(B01)에 사용.
@@ -339,6 +339,8 @@ def act_reconnect(session, label, cycles, cancel, long_print_first=False, timeou
     if not was_up:
         session.log(f"[{label}] ※ 프린터가 켜져 있는데 '끊김'이면 상태 응답도 신호선도 없는 것입니다. "
                     f"1번 탭의 [진단]으로 통신 설정부터 맞추세요 ({tr.lines_text()})")
+        if confirm is not None and tr.port in [p for p, _ in list_com_ports()]:
+            return _reconnect_manual(session, label, tr, cycles, cancel, confirm, csvlog)
     t_end = time.time() + timeout_s
     while done < cycles and time.time() < t_end and not cancel.is_set():
         report(cancel, f"재연결 {done}/{cycles}회 — 지금 {'연결됨: 분리하세요' if was_up else '끊김: 다시 연결하세요'}",
@@ -363,6 +365,41 @@ def act_reconnect(session, label, cycles, cancel, long_print_first=False, timeou
         was_up = up
         time.sleep(0.5)
     s = f"재연결 {done}/{cycles}회, 재연결 후 인쇄 실패 {fail}회. 로그: {csvlog.path}"
+    return {"suggest": "PASS" if done >= cycles and not fail else ("FAIL" if fail else None), "summary": s}
+
+
+def _reconnect_manual(session, label, tr, cycles, cancel, confirm, csvlog):
+    """상태 응답·신호선이 없어 자동 감지를 못 할 때: 작업자 확인으로 재연결/전원 반복을 센다."""
+    if not confirm(f"[{label}]\n프린터 상태 응답이 없어 전원/연결 변화를 자동으로 감지할 수 없습니다.\n\n"
+                   "수동 확인 모드로 진행할까요?\n(매 회 '전원을 껐다 켰는지' → '확인 영수증이 나왔는지'를 묻습니다)"):
+        return {"suggest": None, "summary": "상태 응답 없음 — 자동 감지 불가, 수동 모드 취소"}
+    ok = fail = done = 0
+    for i in range(1, cycles + 1):
+        if cancel.is_set():
+            break
+        report(cancel, f"수동 확인 {i}/{cycles}: 전원 OFF→ON (또는 분리→연결) 후 [확인]", i - 1, cycles)
+        if not confirm(f"[{label}]  {i}/{cycles}회\n\n프린터 전원을 껐다 켜거나 케이블을 뺐다 꽂은 뒤 [확인]을 누르세요.\n"
+                       "(그만하려면 [취소])"):
+            break
+        done = i
+        tr.close()
+        time.sleep(1.0)
+        try:
+            tr.open()
+            send(session, label, patterns.pattern_info(session.opts, label, f"수동 재연결 확인 {i}/{cycles}회"),
+                 "재연결 확인(수동)", csvlog, i)
+            printed = confirm(f"[{label}]  {i}/{cycles}회\n\n'수동 재연결 확인 {i}/{cycles}회' 영수증이 나왔습니까?\n"
+                              "나왔으면 [확인], 안 나왔으면 [취소]")
+        except TransportError as e:
+            session.log(f"[{label}] 재연결 후 전송 실패: {e}")
+            printed = False
+        if printed:
+            ok += 1
+            csvlog.row("재연결(수동)", label, i, "OK")
+        else:
+            fail += 1
+            csvlog.row("재연결(수동)", label, i, "FAIL", msg="확인 영수증 안 나옴")
+    s = f"[수동 확인 모드] {done}/{cycles}회 중 정상 {ok}, 실패 {fail} (상태 응답이 없어 작업자 확인으로 판정). 로그: {csvlog.path}"
     return {"suggest": "PASS" if done >= cycles and not fail else ("FAIL" if fail else None), "summary": s}
 
 
@@ -626,6 +663,8 @@ class AgingRunner:
         self.csv = None
         self.running = False
         self.ended = None
+        self.status_seen = set()     # 한 번이라도 상태 응답이 온 채널
+        self.noresp = set()          # 처음부터 상태 응답이 없어 상태 조회를 생략하는 채널
 
     def elapsed(self):
         if not self.started:
@@ -717,13 +756,15 @@ class AgingRunner:
         st["secs"] += secs
         status = None
         text, code = "", "OK"
-        if self.check_status and tr.supports_status:
+        if self.check_status and tr.supports_status and label not in self.noresp:
             time.sleep(0.2)
             try:
                 status = read_status(tr)
             except TransportError:
                 status = []
             text, code = status_summary(status)
+            if code in ("OK", "WARN", "ERROR"):
+                self.status_seen.add(label)
         if code == "ERROR":
             # 용지 없음/커버 열림은 작업자 조치 대상 → 일시정지로만 집계(실패 아님)
             if not (self.pause_on_error and is_operator_event(status)):
@@ -735,6 +776,14 @@ class AgingRunner:
                 self.cancel.set()
             elif self.pause_on_error:
                 self._wait_recover(label, tr)
+        elif code == "NORESP" and label not in self.status_seen:
+            # 처음부터 응답이 없는 연결(단방향·상태 명령 미지원): 상태 조회 없이 계속, 실패로 세지 않음
+            st["ok"] += 1
+            st["last"] = f"#{seq} OK (상태 응답 없음 → 상태 조회 생략)"
+            self.csv.row("에이징", label, seq, "OK", len(data), secs, status, "상태 응답 없음 — 이후 상태 조회 생략")
+            self.log(f"[에이징][{label}] 상태 응답이 없는 연결입니다 — 인쇄만으로 에이징을 계속합니다 "
+                     f"(순번 누락은 출력물로 확인)")
+            self.noresp.add(label)
         elif code in ("NORESP", "INVALID"):
             st["fail"] += 1
             st["last"] = f"#{seq} {text}"

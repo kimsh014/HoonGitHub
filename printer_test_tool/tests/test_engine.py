@@ -176,6 +176,43 @@ class DiagnoseTest(unittest.TestCase):
         self.assertEqual(len(printed), len(engine.DIAG_BAUDS))
 
 
+class OneWayTest(unittest.TestCase):
+    """프린터→PC 응답이 없는(단방향) 연결."""
+
+    def setUp(self):
+        self.s = engine.Session(log=lambda m: None)
+
+    def tearDown(self):
+        self.s.close_all()
+
+    def test_aging_without_status_is_not_failure(self):
+        f = Fake(status_reply=False)
+        connect(self.s, "RS232", f)
+        r = engine.AgingRunner(self.s, ["RS232"], "기본", "영수증", count=4, interval=0)
+        r.run()
+        time.sleep(0.5)
+        self.assertEqual((r.stats["RS232"]["ok"], r.stats["RS232"]["fail"]), (4, 0))
+        self.assertEqual(f.stats["cuts"], 4)
+        self.assertEqual(f.stats["status_q"], 1)       # 첫 장에서 한 번 조회(무응답) → 이후 생략
+
+    def test_reconnect_manual_mode(self):
+        f = Fake(status_reply=False)
+        connect(self.s, "RS232", f)
+        orig = engine.list_com_ports
+        engine.list_com_ports = lambda: [(f.path, "fake")]
+        answers = []
+        try:
+            r = engine.act_reconnect(self.s, "RS232", 2, threading.Event(),
+                                     confirm=lambda msg: answers.append(msg) or True)
+        finally:
+            engine.list_com_ports = orig
+        time.sleep(0.5)
+        self.assertEqual(r["suggest"], "PASS")
+        self.assertIn("수동 확인 모드", r["summary"])
+        self.assertEqual(len(answers), 1 + 2 * 2)       # 모드 확인 + (전원 반복 확인, 출력 확인) × 2
+        self.assertEqual(f.stats["cuts"], 2)
+
+
 class ManualTest(unittest.TestCase):
     def test_manual_is_up_to_date(self):
         """manual.html 은 make_manual.py 로 만든 최신본이어야 한다 (테스트 케이스 표 자동 생성)."""
