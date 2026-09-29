@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """pty 기반 가짜 ESC/POS 프린터: 스트림을 파싱해 명령 구조를 검증하고 DLE EOT 에 응답."""
 import os
 import pty

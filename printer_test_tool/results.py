@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """시험 결과 저장 (프린터별) / CSV 내보내기 / 계획표 엑셀에 결과 반영."""
 import csv
 import datetime

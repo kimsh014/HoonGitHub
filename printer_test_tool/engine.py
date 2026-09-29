@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """시험 실행 엔진 — GUI/CLI 공용.
 
 모든 동작은 작업 스레드에서 실행되며, cancel(threading.Event)로 중지하고

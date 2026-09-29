@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """가짜 프린터(pty)로 엔진을 검증한다. Linux/macOS 전용.
 
 실행: python -m unittest discover -s tests -v   (printer_test_tool 폴더에서)

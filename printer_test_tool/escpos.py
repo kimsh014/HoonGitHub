@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """ESC/POS 명령 생성기.
 
 프린터로 보낼 바이트열만 만들고, 통신은 transports.py 가 담당한다.

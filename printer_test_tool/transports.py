@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """프린터 연결(통신) 계층.
 
 - SerialTransport : RS232, USB 가상 COM(CDC), 블루투스 SPP(가상 COM) 모두 여기로 연결
