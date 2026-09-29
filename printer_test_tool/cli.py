@@ -6,6 +6,8 @@
   python cli.py print   --ch USB=COM7 --pattern 한글
   python cli.py aging   --ch RS232=COM3:115200:RTS/CTS --hours 12
   python cli.py aging   --ch USB=COM7 --ch BT=COM9 --mode 교대 --hours 12 --pattern 영수증+이미지
+  python cli.py aging   --ch 프린터1=COM3:115200:RTS/CTS --ch 프린터2=COM7 --ch 프린터3=COM9 --mode 개별 --hours 12
+                        (개별: 프린터마다 독립 실행 — 여러 대 동시 에이징)
 
 --ch 형식:  이름=COM포트[:속도[:흐름제어[:형식]]]   (흐름제어: 없음/RTS/CTS/DTR/DSR/XON/XOFF, 형식: 8N1 등)
            이름=printer:Windows프린터이름          이름=file:경로
@@ -13,6 +15,7 @@
 import argparse
 import signal
 import sys
+import threading
 
 import engine
 import patterns
@@ -43,7 +46,7 @@ def main(argv=None):
     ap.add_argument("--ch", action="append", default=[], help="채널 (여러 번 지정 가능)")
     ap.add_argument("--pattern", default="영수증")
     ap.add_argument("--repeat", type=int, default=1)
-    ap.add_argument("--mode", default="기본", choices=["기본", "교대", "동시"])
+    ap.add_argument("--mode", default="기본", choices=["기본", "교대", "동시", "개별"])
     ap.add_argument("--hours", type=float, default=0)
     ap.add_argument("--count", type=int, default=0)
     ap.add_argument("--interval", type=float, default=2)
@@ -84,11 +87,17 @@ def main(argv=None):
         elif a.cmd == "concurrent":
             print(engine.act_concurrent(s)["summary"])
         elif a.cmd == "aging":
-            r = engine.AgingRunner(s, labels, a.mode, a.pattern, a.count, a.hours, a.interval,
-                                   check_status=not a.no_status)
-            signal.signal(signal.SIGINT, lambda *x: r.cancel.set())
-            r.run()
-            return 1 if any(st["fail"] for st in r.stats.values()) else 0
+            groups = [[l] for l in labels] if a.mode == "개별" else [labels]
+            mode = "기본" if a.mode == "개별" else a.mode
+            runners = [engine.AgingRunner(s, g, mode, a.pattern, a.count, a.hours, a.interval,
+                                          check_status=not a.no_status) for g in groups]
+            signal.signal(signal.SIGINT, lambda *x: [r.cancel.set() for r in runners])
+            ths = [threading.Thread(target=r.run) for r in runners]
+            for t in ths:
+                t.start()
+            for t in ths:
+                t.join()
+            return 1 if any(st["fail"] for r in runners for st in r.stats.values()) else 0
     finally:
         s.close_all()
     return 0

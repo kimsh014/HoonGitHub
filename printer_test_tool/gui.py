@@ -21,12 +21,6 @@ KINDS = ("COM", "WinPrinter", "File", "사용 안 함")
 BAUDS = ("9600", "19200", "38400", "57600", "115200", "230400")
 FORMATS = ("8N1", "7E1", "8E1", "8O1", "7O1", "8N2")
 FLOWS = ("없음", "RTS/CTS", "DTR/DSR", "XON/XOFF")
-AGING_PRESETS = {
-    "기본 에이징 (단일 채널)": ("기본", ["RS232"]),
-    "USB + BT 교대 에이징": ("교대", ["USB", "BT"]),
-    "3포트 교대 에이징": ("교대", ["RS232", "USB", "BT"]),
-    "3포트 동시 에이징": ("동시", ["RS232", "USB", "BT"]),
-}
 
 
 class App(tk.Tk):
@@ -40,7 +34,8 @@ class App(tk.Tk):
         self.results = Results()
         self.cancel = threading.Event()
         self.busy = False
-        self.aging = None
+        self.agings = {}                       # 프린터 이름 -> AgingRunner
+        self.ag_session = engine.Session(log=self.log)   # 에이징 전용 연결
         self.cfg = self._load_settings()
 
         self._build()
@@ -115,6 +110,10 @@ class App(tk.Tk):
         for ch, w in self.chw.items():
             cfg["channels"][ch] = {k: v.get() for k, v in w["vars"].items()}
         cfg["plan_path"] = self.cfg.get("plan_path", "")
+        if hasattr(self, "ag_rows"):
+            cfg["aging"] = {
+                "rows": [{k: v.get() for k, v in r["vars"].items()} for r in self.ag_rows],
+                "common": {k: v.get() for k, v in self.ag.items()}}
         self.cfg = cfg
         try:
             with open(SETTINGS, "w", encoding="utf-8") as f:
@@ -123,13 +122,14 @@ class App(tk.Tk):
             pass
 
     def _on_close(self):
-        if self.aging and self.aging.running:
+        if self._ag_running_names():
             if not messagebox.askyesno(APP_TITLE, "에이징이 진행 중입니다. 중지하고 종료할까요?"):
                 return
-            self.aging.cancel.set()
+            self._ag_stop_all()
         self.cancel.set()
         self._save_settings()
         self.session.close_all()
+        self.ag_session.close_all()
         self.destroy()
 
     # ------------------------------------------------------------------ 화면
@@ -169,9 +169,7 @@ class App(tk.Tk):
 
     def _stop(self):
         self.cancel.set()
-        if self.aging and self.aging.running:
-            self.aging.cancel.set()
-        self.log("중지 요청")
+        self.log("중지 요청 (에이징은 에이징 탭의 중지 버튼 사용)")
 
     def _open_folder(self, path):
         os.makedirs(path, exist_ok=True)
@@ -595,140 +593,303 @@ class App(tk.Tk):
         self.log(f"엑셀 반영 {n}건: {out}")
         messagebox.showinfo(APP_TITLE, f"{n}개 항목을 반영해 새 파일로 저장했습니다.\n{out}")
 
-    # ---- 3. 에이징 ----
+    # ---- 3. 에이징 (프린터 여러 대 동시) ----
     def _build_aging(self, nb):
         f = ttk.Frame(nb, padding=10)
-        nb.add(f, text=" 3. 에이징 ")
-        cfg = ttk.LabelFrame(f, text="설정", padding=8)
-        cfg.pack(fill="x")
-        self.ag = {"preset": tk.StringVar(value=list(AGING_PRESETS)[0]), "mode": tk.StringVar(value="기본"),
-                   "pattern": tk.StringVar(value="영수증"), "count": tk.StringVar(value="0"),
-                   "hours": tk.StringVar(value="12"), "interval": tk.StringVar(value="2"),
-                   "status": tk.BooleanVar(value=True), "pause": tk.BooleanVar(value=True),
-                   "reconnect": tk.BooleanVar(value=True), "stopfail": tk.BooleanVar(value=False)}
-        self.ag_ch = {c: tk.BooleanVar(value=(c == "RS232")) for c in CHANNELS}
+        nb.add(f, text=" 3. 에이징 (다중 프린터) ")
+        saved = self.cfg.get("aging", {})
 
-        ttk.Label(cfg, text="프리셋").grid(row=0, column=0, sticky="e")
-        pc = ttk.Combobox(cfg, textvariable=self.ag["preset"], values=list(AGING_PRESETS), width=26, state="readonly")
-        pc.grid(row=0, column=1, sticky="w", columnspan=2)
-        pc.bind("<<ComboboxSelected>>", lambda e: self._ag_preset())
-        ttk.Label(cfg, text="모드").grid(row=0, column=3, sticky="e", padx=(12, 2))
-        ttk.Combobox(cfg, textvariable=self.ag["mode"], values=("기본", "교대", "동시"), width=6, state="readonly").grid(
-            row=0, column=4, sticky="w")
-        ttk.Label(cfg, text="채널").grid(row=0, column=5, sticky="e", padx=(12, 2))
-        chf = ttk.Frame(cfg)
-        chf.grid(row=0, column=6, sticky="w")
-        for c in CHANNELS:
-            ttk.Checkbutton(chf, text=c, variable=self.ag_ch[c]).pack(side="left")
+        # -- 프린터 목록 --
+        box = ttk.LabelFrame(f, text="프린터 목록 — 대마다 연결을 따로 지정 (최대 9대)", padding=8)
+        box.pack(fill="x")
+        self.ag_box = box
+        heads = ("사용", "프린터 이름(샘플번호)", "인터페이스", "연결 방식", "포트 / 프린터", "속도", "형식", "흐름제어", "")
+        for i, h in enumerate(heads):
+            ttk.Label(box, text=h).grid(row=0, column=i, padx=3, sticky="w")
+        self.ag_rows = []
+        rows = saved.get("rows") or [
+            {"use": True, "name": "프린터1", "iface": "RS232", "kind": "COM", "baud": "115200", "flow": "RTS/CTS"},
+            {"use": True, "name": "프린터2", "iface": "USB", "kind": "COM", "baud": "9600", "flow": "없음"},
+            {"use": True, "name": "프린터3", "iface": "BT", "kind": "COM", "baud": "9600", "flow": "없음"},
+        ]
+        for r in rows:
+            self._ag_add_row(r)
+        bb = ttk.Frame(f)
+        bb.pack(fill="x", pady=4)
+        ttk.Button(bb, text="+ 프린터 추가", command=lambda: self._ag_add_row({})).pack(side="left")
+        ttk.Button(bb, text="포트 목록 새로고침", command=self._ag_refresh_ports).pack(side="left", padx=6)
 
-        ttk.Label(cfg, text="패턴").grid(row=1, column=0, sticky="e", pady=6)
-        ttk.Combobox(cfg, textvariable=self.ag["pattern"], values=list(patterns.AGING_PATTERNS), width=14,
-                     state="readonly").grid(row=1, column=1, sticky="w")
-        ttk.Label(cfg, text="시간(h, 0=무제한)").grid(row=1, column=2, sticky="e")
-        ttk.Entry(cfg, textvariable=self.ag["hours"], width=6).grid(row=1, column=3, sticky="w")
-        ttk.Label(cfg, text="장수(0=무제한)").grid(row=1, column=4, sticky="e")
-        ttk.Entry(cfg, textvariable=self.ag["count"], width=7).grid(row=1, column=5, sticky="w")
-        ttk.Label(cfg, text="간격(초)").grid(row=1, column=6, sticky="w")
-        ttk.Entry(cfg, textvariable=self.ag["interval"], width=5).grid(row=1, column=6, sticky="e")
-
-        opt = ttk.Frame(cfg)
-        opt.grid(row=2, column=0, columnspan=8, sticky="w")
-        ttk.Checkbutton(opt, text="매 장 상태 조회(COM)", variable=self.ag["status"]).pack(side="left")
-        ttk.Checkbutton(opt, text="에러 시 일시정지 후 자동 재개(용지 보충 등)", variable=self.ag["pause"]).pack(side="left", padx=8)
-        ttk.Checkbutton(opt, text="전송 실패 시 자동 재연결", variable=self.ag["reconnect"]).pack(side="left")
-        ttk.Checkbutton(opt, text="첫 실패 시 중지", variable=self.ag["stopfail"]).pack(side="left", padx=8)
+        # -- 공통 설정 --
+        c = saved.get("common", {})
+        cfg = ttk.LabelFrame(f, text="에이징 설정 (모든 프린터 공통)", padding=8)
+        cfg.pack(fill="x", pady=4)
+        self.ag = {"pattern": tk.StringVar(value=c.get("pattern", "영수증")), "hours": tk.StringVar(value=c.get("hours", "12")),
+                   "count": tk.StringVar(value=c.get("count", "0")), "interval": tk.StringVar(value=c.get("interval", "2")),
+                   "status": tk.BooleanVar(value=c.get("status", True)), "pause": tk.BooleanVar(value=c.get("pause", True)),
+                   "reconnect": tk.BooleanVar(value=c.get("reconnect", True)),
+                   "stopfail": tk.BooleanVar(value=c.get("stopfail", False))}
+        ttk.Label(cfg, text="패턴").pack(side="left")
+        ttk.Combobox(cfg, textvariable=self.ag["pattern"], values=list(patterns.AGING_PATTERNS), width=13,
+                     state="readonly").pack(side="left", padx=(2, 10))
+        for k, t, w in (("hours", "시간(h)", 5), ("count", "프린터당 장수", 6), ("interval", "간격(초)", 5)):
+            ttk.Label(cfg, text=t).pack(side="left")
+            ttk.Entry(cfg, textvariable=self.ag[k], width=w).pack(side="left", padx=(2, 10))
+        ttk.Checkbutton(cfg, text="상태 조회", variable=self.ag["status"]).pack(side="left")
+        ttk.Checkbutton(cfg, text="에러 시 일시정지/재개", variable=self.ag["pause"]).pack(side="left", padx=4)
+        ttk.Checkbutton(cfg, text="자동 재연결", variable=self.ag["reconnect"]).pack(side="left")
+        ttk.Checkbutton(cfg, text="실패 시 중지", variable=self.ag["stopfail"]).pack(side="left", padx=4)
 
         btns = ttk.Frame(f)
-        btns.pack(fill="x", pady=8)
-        ttk.Button(btns, text="▶ 에이징 시작", style="Big.TButton", command=self._ag_start).pack(side="left")
-        ttk.Button(btns, text="■ 에이징 중지", style="Big.TButton", command=self._ag_stop).pack(side="left", padx=6)
+        btns.pack(fill="x", pady=6)
+        ttk.Button(btns, text="▶ 전체 시작", style="Big.TButton", command=self._ag_start_all).pack(side="left")
+        ttk.Button(btns, text="■ 전체 중지", style="Big.TButton", command=self._ag_stop_all).pack(side="left", padx=6)
+        ttk.Button(btns, text="선택 프린터 중지", command=self._ag_stop_selected).pack(side="left")
+        ttk.Button(btns, text="선택 프린터 다시 시작", command=self._ag_restart_selected).pack(side="left", padx=6)
         self.ag_elapsed = tk.StringVar(value="")
         ttk.Label(btns, textvariable=self.ag_elapsed, font=("", 11, "bold")).pack(side="left", padx=12)
 
-        cols = ("ch", "sent", "ok", "fail", "pause", "reconn", "rate", "last")
-        tv = ttk.Treeview(f, columns=cols, show="headings", height=4)
-        for c, t, w in zip(cols, ("채널", "전송", "정상", "실패", "일시정지", "재연결", "평균속도", "최근"),
-                           (70, 70, 70, 70, 70, 70, 90, 380)):
-            tv.heading(c, text=t)
-            tv.column(c, width=w, anchor="center" if c != "last" else "w")
-        tv.pack(fill="x")
+        # -- 진행 현황 --
+        cols = ("name", "iface", "state", "elapsed", "sent", "ok", "fail", "pause", "reconn", "rate", "last")
+        tv = ttk.Treeview(f, columns=cols, show="headings", height=6, selectmode="extended")
+        for col, t, w in zip(cols, ("프린터", "인터페이스", "상태", "경과", "전송", "정상", "실패", "일시정지", "재연결",
+                                    "평균속도", "최근"),
+                             (110, 70, 70, 75, 60, 60, 60, 65, 60, 80, 300)):
+            tv.heading(col, text=t)
+            tv.column(col, width=w, anchor="w" if col in ("name", "last") else "center")
+        tv.tag_configure("fail", background="#FFC7CE")
+        tv.tag_configure("run", background="#E2EFDA")
+        tv.pack(fill="both", expand=True)
         self.ag_tv = tv
         ttk.Label(f, justify="left", foreground="#404040", text=(
-            "■ 기본 에이징 : 채널 1개로 연속 인쇄 (계획표 야간 에이징 #1 — RS232)\n"
-            "■ USB + BT 교대 : 두 채널을 번갈아 인쇄 (야간 에이징 #2). '동시'는 채널마다 동시에 계속 인쇄\n"
-            "■ 영수증마다 채널·순번·시각이 찍힙니다. 아침에 순번이 빠진 곳이 없는지, 로그 CSV 의 FAIL/ERROR 행을 확인하세요\n"
-            "■ 용지 롤이 다 떨어지면 '에러 시 일시정지'가 켜져 있을 때 보충 후 자동 재개됩니다\n"
-            "■ PC 절전 모드를 꺼 두세요 (절전 시 USB/BT 연결이 끊겨 실패로 기록됩니다)"
-        )).pack(anchor="w", pady=8)
+            "■ [전체 시작] 하면 '사용' 체크된 프린터가 각각 독립적으로 동시에 돌아갑니다 (한 대가 실패해도 나머지는 계속)\n"
+            "■ 영수증마다 프린터 이름·순번·시각이 찍히고, 로그 CSV 는 프린터별로 따로 생깁니다 (logs 폴더)\n"
+            "■ 한 대로 여러 인터페이스를 보려면 같은 이름에 인터페이스만 다르게 여러 줄 등록하세요\n"
+            "■ 1. 연결 설정 탭에서 같은 COM 포트를 열어 두었으면 시작 시 자동으로 닫습니다 · PC 절전 모드는 꺼 두세요"
+        )).pack(anchor="w", pady=6)
+        self.after(1000, self._ag_tick)
 
-    def _ag_preset(self):
-        mode, chans = AGING_PRESETS[self.ag["preset"].get()]
-        self.ag["mode"].set(mode)
-        for c in CHANNELS:
-            self.ag_ch[c].set(c in chans)
+    def _ag_add_row(self, d):
+        if len(self.ag_rows) >= 9:
+            messagebox.showwarning(APP_TITLE, "최대 9대까지 등록할 수 있습니다.")
+            return
+        n = len(self.ag_rows) + 1
+        v = {"use": tk.BooleanVar(value=d.get("use", True)),
+             "name": tk.StringVar(value=d.get("name", f"프린터{n}")),
+             "iface": tk.StringVar(value=d.get("iface", "RS232")),
+             "kind": tk.StringVar(value=d.get("kind", "COM")),
+             "target": tk.StringVar(value=d.get("target", "")),
+             "baud": tk.StringVar(value=d.get("baud", "9600")),
+             "fmt": tk.StringVar(value=d.get("fmt", "8N1")),
+             "flow": tk.StringVar(value=d.get("flow", "없음"))}
+        r = n
+        widgets = [
+            ttk.Checkbutton(self.ag_box, variable=v["use"]),
+            ttk.Entry(self.ag_box, textvariable=v["name"], width=16),
+            ttk.Combobox(self.ag_box, textvariable=v["iface"], values=CHANNELS, width=6, state="readonly"),
+            ttk.Combobox(self.ag_box, textvariable=v["kind"], values=("COM", "WinPrinter", "File"), width=10,
+                         state="readonly"),
+            ttk.Combobox(self.ag_box, textvariable=v["target"], width=40),
+            ttk.Combobox(self.ag_box, textvariable=v["baud"], values=BAUDS, width=8),
+            ttk.Combobox(self.ag_box, textvariable=v["fmt"], values=FORMATS, width=5),
+            ttk.Combobox(self.ag_box, textvariable=v["flow"], values=FLOWS, width=9, state="readonly"),
+        ]
+        row = {"vars": v, "widgets": widgets}
+        widgets.append(ttk.Button(self.ag_box, text="삭제", width=5, command=lambda: self._ag_del_row(row)))
+        for i, w in enumerate(widgets):
+            w.grid(row=r, column=i, padx=2, pady=1, sticky="w")
+        v["kind"].trace_add("write", lambda *a: self._ag_fill_targets(row))
+        self.ag_rows.append(row)
+        self._ag_fill_targets(row)
 
-    def _ag_start(self):
-        if self.aging and self.aging.running:
-            messagebox.showwarning(APP_TITLE, "에이징이 이미 진행 중입니다.")
+    def _ag_del_row(self, row):
+        if row["vars"]["name"].get().strip() in self._ag_running_names():
+            messagebox.showwarning(APP_TITLE, "진행 중인 프린터는 삭제할 수 없습니다. 먼저 중지하세요.")
             return
-        labels = [c for c in CHANNELS if self.ag_ch[c].get()]
-        if not labels:
-            messagebox.showwarning(APP_TITLE, "채널을 선택하세요")
-            return
-        for c in labels:
-            if not self._ensure(c):
-                return
+        for w in row["widgets"]:
+            w.destroy()
+        self.ag_rows.remove(row)
+        for i, rw in enumerate(self.ag_rows, 1):
+            for j, w in enumerate(rw["widgets"]):
+                w.grid(row=i, column=j)
+
+    def _ag_fill_targets(self, row):
+        kind = row["vars"]["kind"].get()
+        if kind == "COM":
+            vals = [f"{p} — {d}" for p, d in list_com_ports()]
+        elif kind == "WinPrinter":
+            vals = list_win_printers()
+        else:
+            vals = [os.path.join(engine.LOG_DIR, f"dump_{row['vars']['name'].get()}.bin")]
+            if not row["vars"]["target"].get().endswith(".bin"):
+                row["vars"]["target"].set(vals[0])
+        row["widgets"][4]["values"] = vals
+
+    def _ag_refresh_ports(self):
+        for row in self.ag_rows:
+            self._ag_fill_targets(row)
+
+    def _ag_running_names(self):
+        return {name for name, r in self.agings.items() if r.running}
+
+    def _ag_row_cfg(self, row):
+        v = {k: x.get() for k, x in row["vars"].items()}
+        tgt = v["target"].split(" — ")[0].strip()
+        if not tgt:
+            raise TransportError(f"{v['name']}: 포트/프린터를 선택하세요")
+        fmt = (v["fmt"] or "8N1").upper()
+        if v["kind"] == "COM":
+            return {"kind": "COM", "port": tgt, "baudrate": int(v["baud"]), "bytesize": int(fmt[0]),
+                    "parity": fmt[1], "stopbits": int(fmt[2]), "flow": v["flow"]}
+        if v["kind"] == "WinPrinter":
+            return {"kind": "WinPrinter", "printer": tgt}
+        return {"kind": "File", "path": tgt}
+
+    def _ag_free_port(self, port):
+        """1. 연결 설정 탭에서 같은 COM 포트를 열어 두었으면 닫는다(Windows 는 포트 동시 사용 불가)."""
+        for label, tr in list(self.session.channels.items()):
+            if getattr(tr, "port", None) == port and tr.is_open:
+                self._disconnect(label)
+                self.log(f"[에이징] {port} 를 사용하던 '{label}' 채널 연결을 해제했습니다")
+
+    def _ag_params(self):
+        return (self.ag["pattern"].get(), int(self.ag["count"].get() or 0), float(self.ag["hours"].get() or 0),
+                float(self.ag["interval"].get() or 0))
+
+    def _ag_start_rows(self, rows, confirm=True):
         try:
-            runner = engine.AgingRunner(
-                self.session, labels, self.ag["mode"].get(), self.ag["pattern"].get(),
-                int(self.ag["count"].get() or 0), float(self.ag["hours"].get() or 0), float(self.ag["interval"].get() or 0),
-                self.ag["status"].get(), self.ag["pause"].get(), self.ag["reconnect"].get(), self.ag["stopfail"].get())
+            pattern, count, hours, interval = self._ag_params()
         except ValueError:
             messagebox.showerror(APP_TITLE, "시간/장수/간격을 숫자로 입력하세요")
             return
-        if runner.count == 0 and runner.hours == 0:
+        if confirm and count == 0 and hours == 0:
             if not messagebox.askyesno(APP_TITLE, "종료 조건이 없습니다(수동 중지까지 계속). 시작할까요?"):
                 return
-        self.aging = runner
-        self.ag_tv.delete(*self.ag_tv.get_children())
-        for c in labels:
-            self.ag_tv.insert("", "end", iid=c, values=(c, 0, 0, 0, 0, 0, "", ""))
+        running = self._ag_running_names()
+        names, ports, plan = set(), set(), []
+        for row in rows:
+            name = row["vars"]["name"].get().strip()
+            if not name:
+                messagebox.showerror(APP_TITLE, "프린터 이름이 비어 있는 줄이 있습니다.")
+                return
+            if name in names:
+                messagebox.showerror(APP_TITLE, f"프린터 이름 '{name}' 이 중복됩니다. 줄마다 다른 이름을 쓰세요.")
+                return
+            names.add(name)
+            if name in running:
+                continue
+            try:
+                cfg = self._ag_row_cfg(row)
+            except (TransportError, ValueError, IndexError) as e:
+                messagebox.showerror(APP_TITLE, f"{name}: 설정 오류 — {e}")
+                return
+            key = cfg.get("port") or cfg.get("printer") or cfg.get("path")
+            if key in ports:
+                messagebox.showerror(APP_TITLE, f"'{key}' 가 두 줄 이상에 지정되어 있습니다.")
+                return
+            ports.add(key)
+            plan.append((name, row["vars"]["iface"].get(), cfg))
+        if not plan:
+            messagebox.showinfo(APP_TITLE, "시작할 프린터가 없습니다 (이미 진행 중이거나 '사용' 체크 없음).")
+            return
 
-        def work():
-            summary = runner.run()
-            self.on_main(lambda: self._ag_finished(summary))
-        threading.Thread(target=work, daemon=True).start()
-        self.after(1000, self._ag_tick)
+        self.ag_session.opts = dict(self.session.opts)
+        errors, ok_names = [], []
+        for name, iface, cfg in plan:
+            if cfg["kind"] == "COM":
+                self._ag_free_port(cfg["port"])
+            tr = make_transport(name, cfg)
+            try:
+                tr.open()
+            except TransportError as e:
+                errors.append(f"{name}: {e}")
+                continue
+            self.ag_session.add(tr)
+            runner = engine.AgingRunner(self.ag_session, [name], "기본", pattern, count, hours, interval,
+                                        self.ag["status"].get(), self.ag["pause"].get(), self.ag["reconnect"].get(),
+                                        self.ag["stopfail"].get())
+            runner.iface = iface
+            self.agings[name] = runner
+            vals = (name, iface, "시작", "", 0, 0, 0, 0, 0, "", "")
+            if self.ag_tv.exists(name):
+                self.ag_tv.item(name, values=vals)      # 선택 상태 유지
+            else:
+                self.ag_tv.insert("", "end", iid=name, values=vals)
+            threading.Thread(target=self._ag_run, args=(name, runner), daemon=True).start()
+            ok_names.append(name)
+        self.log(f"[에이징] 시작: {', '.join(ok_names) or '없음'}")
+        self._save_settings()
+        if errors:
+            messagebox.showerror(APP_TITLE, "연결 실패로 시작하지 못한 프린터:\n\n" + "\n".join(errors))
+
+    def _ag_run(self, name, runner):
+        summary = runner.run()
+        self.on_main(lambda: self._ag_finished(name, runner, summary))
+
+    def _ag_start_all(self):
+        rows = [r for r in self.ag_rows if r["vars"]["use"].get()]
+        if not rows:
+            messagebox.showwarning(APP_TITLE, "'사용' 체크된 프린터가 없습니다.")
+            return
+        self._ag_start_rows(rows)
+
+    def _ag_restart_selected(self):
+        sel = set(self.ag_tv.selection())
+        rows = [r for r in self.ag_rows if r["vars"]["name"].get().strip() in sel]
+        if not rows:
+            messagebox.showinfo(APP_TITLE, "아래 진행 현황 표에서 다시 시작할 프린터를 선택하세요.")
+            return
+        self._ag_start_rows(rows, confirm=False)
+
+    def _ag_stop_selected(self):
+        for name in self.ag_tv.selection():
+            r = self.agings.get(name)
+            if r and r.running:
+                r.cancel.set()
+                self.log(f"[에이징][{name}] 중지 요청 — 현재 장 전송 후 멈춥니다")
+
+    def _ag_stop_all(self):
+        for name, r in self.agings.items():
+            if r.running:
+                r.cancel.set()
+                self.log(f"[에이징][{name}] 중지 요청")
+
+    @staticmethod
+    def _hms(sec):
+        e = int(sec)
+        return f"{e // 3600:02d}:{e % 3600 // 60:02d}:{e % 60:02d}"
 
     def _ag_tick(self):
-        r = self.aging
-        if not r:
-            return
-        for c, st in r.stats.items():
+        n_run = 0
+        for name, r in self.agings.items():
+            if not self.ag_tv.exists(name):
+                continue
+            st = r.stats[name]
             rate = f"{st['bytes'] / st['secs'] / 1024:.1f}KB/s" if st["secs"] else ""
-            if self.ag_tv.exists(c):
-                self.ag_tv.item(c, values=(c, st["sent"], st["ok"], st["fail"], st["pause"], st["reconn"], rate, st["last"]))
-        e = int(r.elapsed())
-        self.ag_elapsed.set(f"{'진행 중' if r.running else '종료'}  {e // 3600:02d}:{e % 3600 // 60:02d}:{e % 60:02d}  "
-                            f"총 {r.total}장")
-        if r.running:
-            self.after(1000, self._ag_tick)
+            state = "진행 중" if r.running else "종료"
+            n_run += r.running
+            self.ag_tv.item(name, values=(name, getattr(r, "iface", ""), state, self._hms(r.elapsed()), st["sent"],
+                                          st["ok"], st["fail"], st["pause"], st["reconn"], rate, st["last"]),
+                            tags=("fail",) if st["fail"] else (("run",) if r.running else ()))
+        if self.agings:
+            self.ag_elapsed.set(f"진행 중 {n_run}대 / 전체 {len(self.agings)}대")
+        self.after(1000, self._ag_tick)
 
-    def _ag_stop(self):
-        if self.aging and self.aging.running:
-            self.aging.cancel.set()
-            self.log("[에이징] 중지 요청 — 현재 장 전송 후 멈춥니다")
-
-    def _ag_finished(self, summary):
-        self._ag_tick()
-        r = self.results.get("X04")
-        note = (r["note"] + "\n" if r["note"] else "") + f"[{time.strftime('%m-%d %H:%M')}] 에이징({self.aging.mode} " \
-            f"{'+'.join(self.aging.labels)}) {summary}"
+    def _ag_finished(self, name, runner, summary):
+        tr = self.ag_session.channels.get(name)
+        if tr:
+            tr.close()
+        rec = self.results.get("X04")
+        note = (rec["note"] + "\n" if rec["note"] else "") + \
+            f"[{time.strftime('%m-%d %H:%M')}] 에이징 {name}({getattr(runner, 'iface', '')}) {summary}"
         self.results.set("X04", note=note, tester=self.common["tester"].get(), fw=self.common["fw"].get())
         self._refresh_tv()
         if self._cur() and self._cur()["id"] == "X04":
             self._tc_select()
-        messagebox.showinfo(APP_TITLE, "에이징 종료\n\n" + summary)
+        if not self._ag_running_names():
+            lines = [f"{n}: 전송 {r.stats[n]['sent']} / 정상 {r.stats[n]['ok']} / 실패 {r.stats[n]['fail']}"
+                     for n, r in self.agings.items()]
+            messagebox.showinfo(APP_TITLE, "모든 프린터 에이징이 종료되었습니다.\n\n" + "\n".join(lines) +
+                                "\n\n자세한 내용은 X04 비고와 logs 폴더 CSV 를 확인하세요.")
 
     # ---- 4. 수동 인쇄 ----
     def _build_manual(self, nb):

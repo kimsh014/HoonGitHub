@@ -30,6 +30,7 @@ class CsvLog:
     def __init__(self, name):
         os.makedirs(LOG_DIR, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        name = "".join("_" if ch in '\\/:*?"<>|' else ch for ch in name)  # 파일명에 못 쓰는 문자
         self.path = os.path.join(LOG_DIR, f"{stamp}_{name}.csv")
         self.lock = threading.Lock()
         with open(self.path, "w", newline="", encoding="utf-8-sig") as f:
