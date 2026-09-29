@@ -1339,6 +1339,17 @@ class PrinterPanel:
             messagebox.showerror(APP_TITLE, str(e))
             app._refresh_targets_ui()
             return None
+        # 흐름제어 신호선 확인 — 맞지 않으면 전송이 막혀(시간 초과) 아무것도 안 나가므로 바로 알린다
+        need = {"RTS/CTS": "CTS", "DTR/DSR": "DSR"}.get(cfg.get("flow", ""))
+        ln = tr.lines() if hasattr(tr, "lines") else {}
+        if need and ln and not ln.get(need):
+            if messagebox.askyesno(
+                    APP_TITLE, f"{want}: 흐름제어가 '{cfg['flow']}' 인데 {need} 신호가 없습니다 "
+                               f"({tr.lines_text()}).\n\n이대로면 데이터가 전송되지 않습니다(전송 시간 초과).\n"
+                               "흐름제어를 '없음'으로 바꿔서 연결할까요?"):
+                tr.close()
+                self.rows[iface]["flow"].set("없음")
+                return self.connect(iface, quiet)
         app.session.add(tr)
         self.connected[iface] = want
         self.rows[iface]["state"].set("● 연결됨")

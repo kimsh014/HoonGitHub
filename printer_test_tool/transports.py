@@ -352,7 +352,7 @@ def make_transport(label, cfg: dict) -> Transport:
     if kind == "COM":
         return SerialTransport(label, cfg["port"], cfg.get("baudrate", 115200), cfg.get("bytesize", 8),
                                cfg.get("parity", "N"), cfg.get("stopbits", 1), cfg.get("flow", "RTS/CTS"),
-                               cfg.get("write_timeout", 30))
+                               cfg.get("write_timeout", 15))
     if kind == "WinPrinter":
         return WinPrinterTransport(label, cfg["printer"])
     if kind == "File":
