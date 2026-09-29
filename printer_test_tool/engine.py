@@ -15,7 +15,25 @@ from escpos import PRINTER_INFO, Receipt, dle_eot, gs_i, parse_status
 from transports import SerialTransport, TransportError, list_com_ports
 
 # exe(PyInstaller)로 실행하면 exe 가 있는 폴더에 logs/results/settings 를 만든다
-BASE_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+def _data_dir():
+    """logs/results/settings 를 둘 폴더.
+
+    exe(또는 소스) 옆 폴더를 쓰되, 잠긴 POS 처럼 그 폴더에 쓸 수 없으면 사용자 문서\PrinterTester 로 대신한다.
+    """
+    here = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+    try:
+        probe = os.path.join(here, ".write_test")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.remove(probe)
+        return here
+    except OSError:
+        alt = os.path.join(os.path.expanduser("~"), "Documents", "PrinterTester")
+        os.makedirs(alt, exist_ok=True)
+        return alt
+
+
+BASE_DIR = _data_dir()
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 

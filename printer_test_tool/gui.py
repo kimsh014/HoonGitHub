@@ -313,7 +313,7 @@ class App(tk.Tk):
         top = ttk.Frame(self, padding=(8, 6, 8, 0))
         top.pack(fill="x")
         ttk.Label(top, text=APP_TITLE, style="Title.TLabel").pack(side="left")
-        ttk.Button(top, text="📖 사용 설명서", command=self.open_manual).pack(side="right")
+        ttk.Button(top, text="사용 설명서 (도움말)", command=self.open_manual).pack(side="right")
         ttk.Button(top, text="로그 폴더 열기", command=lambda: self._open_folder(engine.LOG_DIR)).pack(side="right", padx=6)
 
         paned = ttk.PanedWindow(self, orient="vertical")

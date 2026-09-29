@@ -7,7 +7,7 @@
 
 | 방법 | 절차 |
 |---|---|
-| **exe (권장)** | GitHub → Actions → `printer-test-tool` → 최신 실행 → `PrinterTester-windows` 다운로드 → 압축 해제 → `PrinterTester.exe` 실행 |
+| **exe (권장, 설치 불필요)** | GitHub → Actions → `printer-test-tool` → 최신 실행 → `PrinterTester-windows`(Win10/11 64비트) 또는 `PrinterTester-win7-32bit`(Win7·POSReady 7·32비트, 64비트에서도 실행) 다운로드 → 압축 해제 → `PrinterTester.exe` 실행. 파이썬 등 설치 없음 |
 | exe 직접 빌드 | Python 3.9+ 설치 후 `build_exe.bat` 더블클릭 → `dist\PrinterTester.exe` |
 | Python 으로 실행 | Python 3.9+ 설치 후 `run.bat` 더블클릭 (처음 한 번 패키지 자동 설치) |
 
@@ -26,7 +26,7 @@
 - Bluetooth 는 Classic(SPP) 기준입니다. BLE 전용 프린터라면 별도 지원이 필요합니다.
 - 프린터 없이 동작만 보려면 **File** 을 선택하세요(전송 데이터가 파일로 저장).
 
-## 3. 화면 구성 (자세한 사용법은 `manual.html` — 프로그램의 [📖 사용 설명서] 버튼)
+## 3. 화면 구성 (자세한 사용법은 `manual.html` — 프로그램의 [사용 설명서 (도움말)] 버튼)
 
 1. **프린터 연결** — 프린터(최대 9대)마다 **이름**을 붙이고 RS232 / USB / BT 연결을 **각각** 설정·연결.
    공통 설정의 **영수증 길이**(기본 120mm)로 모든 출력물 길이를 맞춥니다(속도 시험만 예외). **빠른 점검**:

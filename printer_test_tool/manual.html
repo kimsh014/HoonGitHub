@@ -53,6 +53,16 @@ td.id{white-space:nowrap;font-weight:700}
 <div class="card"><b>준비물</b><ul><li>Windows 10/11 PC 1대</li><li>시험할 프린터 (여러 대 가능)</li><li>RJ45↔DB9 전용 케이블 또는 USB-시리얼 변환기, USB B 케이블</li><li>감열지 충분히, 바코드 스캐너, 스마트폰(QR), 자</li></ul></div>
 <div class="card"><b>실행</b><ol><li><code>PrinterTester.exe</code> 를 바탕화면 등 <b>쓰기 가능한 폴더</b>에 복사</li><li>더블클릭. "Windows의 PC 보호"가 뜨면 <span class="btn">추가 정보</span> → <span class="btn">실행</span></li><li>같은 폴더에 <code>logs</code>, <code>results</code>, <code>settings.json</code> 이 생깁니다</li></ol></div>
 </div>
+<div class="tip"><b>설치 필요 없음:</b> exe 하나에 필요한 것이 모두 들어 있어 <b>파이썬이나 다른 프로그램을 설치하지 않습니다.</b> 레지스트리·시스템 설정도 바꾸지 않으므로 일반 POS 기기에서 그대로 쓸 수 있고, 다 쓰면 폴더째 지우면 끝입니다.</div>
+<table><tr><th style="width:34%">POS / PC 의 Windows</th><th>사용할 파일</th></tr>
+<tr><td>Windows 10 / 11 (64비트)</td><td><code>PrinterTester-windows</code> 의 PrinterTester.exe</td></tr>
+<tr><td>Windows 7 / POSReady 7 / 32비트 Windows</td><td><code>PrinterTester-win7-32bit</code> 의 PrinterTester.exe (64비트 Windows 에서도 실행됨 — 모르면 이것)</td></tr>
+</table>
+<p class="sub">Windows 버전 확인: <kbd>Windows 키</kbd>+<kbd>R</kbd> → <code>winver</code> 입력 → 확인. 32/64비트는 파일 탐색기에서 '내 PC' 오른쪽 클릭 → 속성 → 시스템 종류.</p>
+<ul>
+<li>exe 가 있는 폴더에 쓸 수 없는 잠긴 POS 에서는 로그·결과가 자동으로 <code>문서\PrinterTester</code> 에 저장됩니다 (로그 창 첫 줄에 위치 표시).</li>
+<li>보안 프로그램(백신·실행 제한 프로그램)이 서명 없는 exe 를 막으면 관리자에게 예외 등록을 요청하세요. USB 메모리에 넣고 거기서 바로 실행해도 됩니다.</li>
+</ul>
 <div class="note"><b>에이징 전 필수:</b> PC 절전 모드 끄기 (Windows 설정 → 전원 → 절전 "안 함"). 절전에 들어가면 USB·BT 연결이 끊겨 실패로 기록됩니다.</div>
 
 <h2 id="s2">2. 화면 구성</h2>
@@ -63,7 +73,7 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td><b>4. 패턴 인쇄 / 명령</b> 탭</td><td>패턴 골라 인쇄, 상태·프린터 정보 조회, HEX 명령 직접 전송.</td></tr>
 <tr><td><b>작업 현황</b> (화면 아래, 항상 보임)</td><td>지금 실행 중인 모든 작업 — <b>무엇을, 어느 프린터/통신에서, 몇 %까지</b> — 표시. 여기서 <span class="btn">■ 선택 작업 중지</span> · <span class="btn">■ 모두 중지</span>.</td></tr>
 <tr><td>로그 (맨 아래)</td><td>전송량·상태 응답 등 자세한 기록. 같은 내용이 logs 폴더 CSV 에도 남습니다.</td></tr>
-<tr><td><span class="btn">📖 사용 설명서</span> (오른쪽 위)</td><td>이 문서를 엽니다.</td></tr>
+<tr><td><span class="btn">사용 설명서 (도움말)</span> (오른쪽 위)</td><td>이 문서를 엽니다.</td></tr>
 </table>
 
 <h2 id="s3">3. 프린터 등록·연결</h2>
