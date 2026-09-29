@@ -169,6 +169,39 @@ class SerialTransport(Transport):
                 raise TransportError(f"{self.label}: 상태 조회 실패: {e}") from e
         return resp if resp else None
 
+    def urgent_query(self, cmd, nbytes=1, timeout=1.0):
+        """흐름제어(BUSY)로 송신이 막혔을 때의 상태 조회.
+
+        막혀 있던 미전송 데이터를 버리고, 잠시 흐름제어를 끈 채 짧은 쓰기 제한시간으로 DLE EOT 를 보낸다.
+        (ESC/POS 실시간 명령은 프린터가 BUSY 여도 처리된다)
+        """
+        if not self.is_open:
+            raise TransportError(f"{self.label}: 포트가 열려 있지 않습니다")
+        with self.lock:
+            s = self.ser
+            saved = (s.rtscts, s.dsrdtr, s.xonxoff, s.write_timeout)
+            try:
+                s.reset_output_buffer()
+                s.rtscts, s.dsrdtr, s.xonxoff, s.write_timeout = False, False, False, 2.0
+                s.reset_input_buffer()
+                s.write(cmd)
+                resp = bytearray()
+                deadline = time.perf_counter() + timeout
+                while len(resp) < nbytes and time.perf_counter() < deadline:
+                    waiting = s.in_waiting
+                    if waiting:
+                        resp += s.read(min(waiting, nbytes - len(resp)))
+                    else:
+                        time.sleep(0.01)
+            except Exception as e:
+                raise TransportError(f"{self.label}: 상태 조회 실패: {e}") from e
+            finally:
+                try:
+                    s.rtscts, s.dsrdtr, s.xonxoff, s.write_timeout = saved
+                except Exception:
+                    pass
+        return bytes(resp) if resp else None
+
 
 class WinPrinterTransport(Transport):
     """Windows 스풀러를 통한 RAW 전송. 상태(양방향) 조회는 드라이버 의존이라 지원하지 않는다."""

@@ -50,15 +50,21 @@ class App(tk.Tk):
     def _poll(self):
         try:
             while True:
-                kind, payload = self.q.get_nowait()
-                if kind == "log":
-                    self.logbox.insert("end", payload + "\n")
+                try:
+                    kind, payload = self.q.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    if kind == "log":
+                        self.logbox.insert("end", payload + "\n")
+                        self.logbox.see("end")
+                    elif kind == "call":
+                        payload()
+                except Exception as e:  # 콜백 하나의 오류로 화면 갱신이 멈추지 않도록
+                    self.logbox.insert("end", f"{time.strftime('%H:%M:%S')} [내부 오류] {e!r}\n")
                     self.logbox.see("end")
-                elif kind == "call":
-                    payload()
-        except queue.Empty:
-            pass
-        self.after(100, self._poll)
+        finally:
+            self.after(100, self._poll)
 
     def on_main(self, fn):
         self.q.put(("call", fn))
@@ -125,7 +131,13 @@ class App(tk.Tk):
         if self._ag_running_names():
             if not messagebox.askyesno(APP_TITLE, "에이징이 진행 중입니다. 중지하고 종료할까요?"):
                 return
+            self._closing = True
             self._ag_stop_all()
+            # 현재 장 전송을 마치고 결과(X04)가 기록될 때까지 최대 10초 대기
+            end = time.time() + 10
+            while (self._ag_running_names() or not self.q.empty()) and time.time() < end:
+                self.update()
+                time.sleep(0.05)
         self.cancel.set()
         self._save_settings()
         self.session.close_all()
@@ -302,6 +314,9 @@ class App(tk.Tk):
                 self.chw[ch]["state"].set("사용 안 함")
                 return
             tr = make_transport(ch, cfg)
+            old = self.session.channels.pop(ch, None)
+            if old:
+                old.close()           # Windows COM 포트는 동시에 두 번 열 수 없으므로 기존 연결을 먼저 닫는다
             tr.open()
         except (TransportError, ValueError) as e:
             self.chw[ch]["state"].set("연결 실패")
@@ -663,7 +678,7 @@ class App(tk.Tk):
         ttk.Label(f, justify="left", foreground="#404040", text=(
             "■ [전체 시작] 하면 '사용' 체크된 프린터가 각각 독립적으로 동시에 돌아갑니다 (한 대가 실패해도 나머지는 계속)\n"
             "■ 영수증마다 프린터 이름·순번·시각이 찍히고, 로그 CSV 는 프린터별로 따로 생깁니다 (logs 폴더)\n"
-            "■ 한 대로 여러 인터페이스를 보려면 같은 이름에 인터페이스만 다르게 여러 줄 등록하세요\n"
+            "■ 한 대로 여러 인터페이스를 볼 때는 이름을 구분해 여러 줄 등록 (예: 샘플A-RS232, 샘플A-USB)\n"
             "■ 1. 연결 설정 탭에서 같은 COM 포트를 열어 두었으면 시작 시 자동으로 닫습니다 · PC 절전 모드는 꺼 두세요"
         )).pack(anchor="w", pady=6)
         self.after(1000, self._ag_tick)
@@ -808,6 +823,8 @@ class App(tk.Tk):
                                         self.ag["status"].get(), self.ag["pause"].get(), self.ag["reconnect"].get(),
                                         self.ag["stopfail"].get())
             runner.iface = iface
+            runner.tr = tr
+            runner.running = True     # 스레드 시작 전에 표시 → 빠른 두 번 클릭 시 중복 실행 방지
             self.agings[name] = runner
             vals = (name, iface, "시작", "", 0, 0, 0, 0, 0, "", "")
             if self.ag_tv.exists(name):
@@ -875,9 +892,9 @@ class App(tk.Tk):
         self.after(1000, self._ag_tick)
 
     def _ag_finished(self, name, runner, summary):
-        tr = self.ag_session.channels.get(name)
-        if tr:
-            tr.close()
+        runner.tr.close()     # 이 러너의 연결만 닫는다 (같은 이름으로 재시작된 새 연결은 건드리지 않음)
+        if self.ag_session.channels.get(name) is runner.tr:
+            self.ag_session.channels.pop(name, None)
         rec = self.results.get("X04")
         note = (rec["note"] + "\n" if rec["note"] else "") + \
             f"[{time.strftime('%m-%d %H:%M')}] 에이징 {name}({getattr(runner, 'iface', '')}) {summary}"
@@ -885,7 +902,7 @@ class App(tk.Tk):
         self._refresh_tv()
         if self._cur() and self._cur()["id"] == "X04":
             self._tc_select()
-        if not self._ag_running_names():
+        if not self._ag_running_names() and not getattr(self, "_closing", False):
             lines = [f"{n}: 전송 {r.stats[n]['sent']} / 정상 {r.stats[n]['ok']} / 실패 {r.stats[n]['fail']}"
                      for n, r in self.agings.items()]
             messagebox.showinfo(APP_TITLE, "모든 프린터 에이징이 종료되었습니다.\n\n" + "\n".join(lines) +

@@ -33,28 +33,40 @@ class CsvLog:
         name = "".join("_" if ch in '\\/:*?"<>|' else ch for ch in name)  # 파일명에 못 쓰는 문자
         self.path = os.path.join(LOG_DIR, f"{stamp}_{name}.csv")
         self.lock = threading.Lock()
+        self.pending = []
         with open(self.path, "w", newline="", encoding="utf-8-sig") as f:
             csv.writer(f).writerow(self.FIELDS)
 
     def row(self, test, channel, seq, result, nbytes="", secs="", status=None, msg=""):
+        """한 줄 기록. 파일이 잠겨 있으면(엑셀로 열어 둔 경우 등) 메모리에 보관했다가 다음 기록 때 함께 쓴다.
+        로그 기록 실패로 시험이 멈추는 일은 없어야 한다."""
         st = ["", "", "", ""]
         if status:
             for s in status:
                 st[s["n"] - 1] = f'{s["hex"]} {s["text"]}'
-        with self.lock, open(self.path, "a", newline="", encoding="utf-8-sig") as f:
-            csv.writer(f).writerow([now_str(), test, channel, seq, result, nbytes,
-                                    f"{secs:.3f}" if isinstance(secs, float) else secs, *st, msg])
+        line = [now_str(), test, channel, seq, result, nbytes,
+                f"{secs:.3f}" if isinstance(secs, float) else secs, *st, msg]
+        with self.lock:
+            self.pending.append(line)
+            try:
+                with open(self.path, "a", newline="", encoding="utf-8-sig") as f:
+                    csv.writer(f).writerows(self.pending)
+                self.pending = []
+            except OSError:
+                self.pending = self.pending[-100000:]   # 메모리 보호
 
 
 # ---------------- 상태 ----------------
 
-def read_status(tr, timeout=1.0):
-    """DLE EOT 1~4 조회. 지원 안 하면 None, 응답 없으면 [] 반환."""
+def read_status(tr, timeout=1.0, urgent=False):
+    """DLE EOT 1~4 조회. 지원 안 하면 None, 응답 없으면 [] 반환.
+    urgent=True: 흐름제어로 송신이 막힌 상태에서 조회 (SerialTransport.urgent_query)."""
     if not tr.supports_status:
         return None
+    q = tr.urgent_query if urgent and hasattr(tr, "urgent_query") else tr.query
     out = []
     for n in (1, 2, 3, 4):
-        resp = tr.query(dle_eot(n), 1, timeout)
+        resp = q(dle_eot(n), 1, timeout)
         if not resp:
             return []
         out.append(parse_status(n, resp[0]))
@@ -437,9 +449,12 @@ class AgingRunner:
         self.started = None
         self.csv = None
         self.running = False
+        self.ended = None
 
     def elapsed(self):
-        return time.time() - self.started if self.started else 0
+        if not self.started:
+            return 0
+        return (self.ended or time.time()) - self.started
 
     def _time_up(self):
         if self.hours > 0 and self.elapsed() >= self.hours * 3600:
@@ -462,8 +477,12 @@ class AgingRunner:
         while not self.cancel.is_set():
             time.sleep(2)
             try:
+                if not tr.is_open:
+                    tr.open()
                 text, code = status_summary(read_status(tr))
             except TransportError:
+                # 일시정지 중 프린터 재부팅 등으로 핸들이 죽은 경우: 닫고 다음 회차에 다시 연다
+                tr.close()
                 continue
             if code in ("OK", "WARN"):
                 self.log(f"[에이징][{label}] 복구됨, 재개")
@@ -498,7 +517,7 @@ class AgingRunner:
             tr0 = self.s.channels.get(label)
             if self.pause_on_error and tr0 is not None and tr0.is_open and tr0.supports_status:
                 try:
-                    status = read_status(tr0)
+                    status = read_status(tr0, urgent=True)
                 except TransportError:
                     status = None
                 if is_operator_event(status):
@@ -589,6 +608,7 @@ class AgingRunner:
             else:
                 self._loop(self.labels if self.mode == "교대" else self.labels[:1])
         finally:
+            self.ended = time.time()
             self.running = False
             self.log("[에이징] 종료 — " + self.summary())
         return self.summary()

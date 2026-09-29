@@ -108,6 +108,42 @@ class EngineTest(unittest.TestCase):
             engine.list_com_ports = orig
         self.assertEqual(r["suggest"], "PASS")
 
+    def test_csv_log_survives_locked_file(self):
+        log = engine.CsvLog("locktest")
+        real = log.path
+        log.path = engine.LOG_DIR            # 디렉터리 → 열기 실패(엑셀이 잠근 상황 흉내)
+        log.row("t", "c", 1, "OK")           # 예외 없이 보관만 해야 함
+        self.assertEqual(len(log.pending), 1)
+        log.path = real
+        log.row("t", "c", 2, "OK")           # 잠금 해제 후 밀린 줄까지 기록
+        with open(real, encoding="utf-8-sig") as f:
+            self.assertEqual(len(f.read().strip().splitlines()), 3)   # 헤더 + 2줄
+
+    def test_urgent_status_query(self):
+        f = Fake()
+        tr = connect(self.s, "RS232", f, flow="RTS/CTS")
+        st = engine.read_status(tr, urgent=True)
+        self.assertEqual(len(st), 4)
+        self.assertTrue(tr.ser.rtscts)       # 흐름제어 설정 복원
+
+    def test_pause_recovers_after_handle_dies(self):
+        f = Fake(paper_out_after=1)
+        tr = connect(self.s, "RS232", f)
+        r = engine.AgingRunner(self.s, ["RS232"], "기본", "영수증", count=2, interval=0)
+        th = threading.Thread(target=r.run)
+        th.start()
+        time.sleep(2.5)
+        self.assertEqual(r.stats["RS232"]["pause"], 1)
+        tr.ser.close()                       # 일시정지 중 핸들이 죽음(프린터 재부팅 등)
+        f.paper_out_after = None
+        th.join(20)
+        self.assertFalse(th.is_alive())
+        self.assertEqual(r.total, 2)
+        self.assertIsNotNone(r.ended)
+        e1 = r.elapsed()
+        time.sleep(0.3)
+        self.assertEqual(r.elapsed(), e1)    # 종료 후 경과 시간 고정
+
 
 if __name__ == "__main__":
     unittest.main()

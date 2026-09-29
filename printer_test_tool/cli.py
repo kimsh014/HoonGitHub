@@ -96,7 +96,8 @@ def main(argv=None):
             for t in ths:
                 t.start()
             for t in ths:
-                t.join()
+                while t.is_alive():      # 타임아웃 join: Windows 에서도 Ctrl+C 가 먹도록
+                    t.join(0.5)
             return 1 if any(st["fail"] for r in runners for st in r.stats.values()) else 0
     finally:
         s.close_all()
