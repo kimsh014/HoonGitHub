@@ -32,7 +32,7 @@ KINDS = ("COM", "WinPrinter", "File")
 BAUDS = ("9600", "19200", "38400", "57600", "115200", "230400")
 FORMATS = ("8N1", "7E1", "8E1", "8O1", "7O1", "8N2")
 FLOWS = ("없음", "RTS/CTS", "DTR/DSR", "XON/XOFF")
-IFACE_DEFAULTS = {"RS232": {"baud": "115200", "flow": "RTS/CTS"}, "USB": {"baud": "9600", "flow": "없음"},
+IFACE_DEFAULTS = {"RS232": {"baud": "9600", "flow": "없음"}, "USB": {"baud": "9600", "flow": "없음"},
                   "BT": {"baud": "9600", "flow": "없음"}}
 MAX_PRINTERS = 9
 
@@ -1213,7 +1213,7 @@ class PrinterPanel:
         ttk.Button(head, text="▶ 빠른 점검", command=lambda: app.quick_check([self])).pack(side="left", padx=2)
         ttk.Button(head, text="삭제", command=lambda: app._remove_printer(self)).pack(side="left", padx=(12, 0))
 
-        for j, h in enumerate(("사용", "통신", "연결 방식", "포트 / 프린터 / 파일", "속도", "형식", "흐름제어", "", "", "", "상태")):
+        for j, h in enumerate(("사용", "통신", "연결 방식", "포트 / 프린터 / 파일", "속도", "형식", "흐름제어", "", "", "", "", "상태")):
             ttk.Label(self.frame, text=h, foreground="#606060").grid(row=1, column=j, padx=2, sticky="w")
         self.rows = {}
         saved = d.get("ifaces", {})
@@ -1239,7 +1239,9 @@ class PrinterPanel:
             ttk.Button(self.frame, text="해제", width=5, command=lambda i=iface: self.disconnect(i)).grid(row=r, column=8, padx=1)
             ttk.Button(self.frame, text="확인 인쇄", width=8,
                        command=lambda i=iface: self.test_print(i)).grid(row=r, column=9, padx=1)
-            ttk.Label(self.frame, textvariable=v["state"], width=14).grid(row=r, column=10, sticky="w")
+            ttk.Button(self.frame, text="진단", width=5,
+                       command=lambda i=iface: self.diagnose(i)).grid(row=r, column=10, padx=1)
+            ttk.Label(self.frame, textvariable=v["state"], width=14).grid(row=r, column=11, sticky="w")
             v["kind"].trace_add("write", lambda *a, i=iface: self.fill_targets(i))
             v["use"].trace_add("write", lambda *a: app._on_tab())
             self.rows[iface] = v
@@ -1365,6 +1367,47 @@ class PrinterPanel:
     def disconnect_all(self):
         for i in IFACES:
             self.disconnect(i)
+
+    def diagnose(self, iface):
+        """통신 자동 진단 — 속도·흐름제어 조합을 시도해 응답하는 설정을 찾아 적용."""
+        app, v = self.app, self.rows[iface]
+        if v["kind"].get() != "COM":
+            messagebox.showinfo(APP_TITLE, "진단은 연결 방식이 COM 일 때만 할 수 있습니다.")
+            return
+        port = v["target"].get().split(" — ")[0].strip()
+        if not port:
+            messagebox.showwarning(APP_TITLE, f"{self.name} {iface}: 포트를 먼저 선택하세요.")
+            return
+        c = self.connected.get(iface)
+        if c and app.busy.get(c):
+            messagebox.showwarning(APP_TITLE, f"{c} 는 [{app.busy[c].name}] 작업 중입니다. 먼저 [작업 현황]에서 중지하세요.")
+            return
+        if not messagebox.askyesno(
+                APP_TITLE, f"{self.name} / {iface} ({port}) 통신 진단을 시작합니다.\n\n"
+                           "속도 5가지 × 흐름제어 3가지를 차례로 시도합니다 (약 15~30초).\n"
+                           "응답이 전혀 없으면 속도별로 한 줄씩 강제 인쇄합니다.\n\n"
+                           "프린터 전원·용지를 확인하고 [예]를 누르세요."):
+            return
+        self.disconnect(iface)            # 진단하는 동안 포트를 비워 둔다
+        fmt = v["fmt"].get() or "8N1"
+        cid_ = cid(self.name, iface)
+        v["state"].set("진단 중…")
+
+        def done(r):
+            found = r.get("found")
+            if found:
+                if messagebox.askyesno(APP_TITLE, f"{r['summary']}\n\n이 설정(속도 {found['baud']}, "
+                                                  f"흐름제어 {found['flow']})을 적용하고 연결할까요?"):
+                    v["baud"].set(str(found["baud"]))
+                    v["flow"].set(found["flow"])
+                    self.connect(iface)
+                    return
+                v["state"].set("미연결")
+            else:
+                v["state"].set("응답 없음")
+                messagebox.showwarning(APP_TITLE, r.get("summary", ""))
+        app.start_task(f"통신 진단 {port}", [cid_],
+                       lambda task: engine.act_diagnose(port, task, app.log, fmt), done)
 
     def test_print(self, iface):
         lab = self.connect(iface, quiet=True)

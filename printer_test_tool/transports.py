@@ -80,8 +80,8 @@ class SerialTransport(Transport):
     kind = "COM"
     supports_status = True
 
-    def __init__(self, label, port, baudrate=115200, bytesize=8, parity="N",
-                 stopbits=1, flow="RTS/CTS", write_timeout=30.0, chunk=1024):
+    def __init__(self, label, port, baudrate=9600, bytesize=8, parity="N",
+                 stopbits=1, flow="없음", write_timeout=15.0, chunk=1024):
         super().__init__(label)
         self.port = port
         self.baudrate = int(baudrate)
@@ -119,6 +119,19 @@ class SerialTransport(Transport):
             self.ser = None
             raise TransportError(f"{self.port} 열기 실패: {e}") from e
 
+    def lines(self):
+        """RS232 입력 신호선 상태 {CTS, DSR, CD}. 알 수 없으면 빈 dict."""
+        if not self.is_open:
+            return {}
+        try:
+            return {"CTS": bool(self.ser.cts), "DSR": bool(self.ser.dsr), "CD": bool(self.ser.cd)}
+        except Exception:
+            return {}
+
+    def lines_text(self):
+        ln = self.lines()
+        return " ".join(f"{k}={'ON' if v else 'off'}" for k, v in ln.items()) if ln else "신호선 상태 알 수 없음"
+
     def close(self):
         if self.ser is not None:
             try:
@@ -143,7 +156,15 @@ class SerialTransport(Transport):
                     self.ser.write(data[i:i + self.chunk])
                 self.ser.flush()
             except serial.SerialTimeoutException as e:
-                raise TransportError(f"{self.label}: 전송 시간 초과({self.write_timeout:g}s) — 흐름제어/BUSY 확인") from e
+                hint = ""
+                ln = self.lines()
+                if self.flow == "RTS/CTS" and ln and not ln.get("CTS"):
+                    hint = " — CTS 신호가 없습니다: 흐름제어를 '없음'으로 바꾸거나 케이블 CTS 결선 확인([진단] 버튼)"
+                elif self.flow == "DTR/DSR" and ln and not ln.get("DSR"):
+                    hint = " — DSR 신호가 없습니다: 흐름제어를 '없음'으로 바꾸거나 케이블 확인([진단] 버튼)"
+                else:
+                    hint = " — 프린터 BUSY(용지·커버) 또는 흐름제어 불일치([진단] 버튼)"
+                raise TransportError(f"{self.label}: 전송 시간 초과({self.write_timeout:g}s), {self.lines_text()}{hint}") from e
             except TransportError:
                 raise
             except Exception as e:

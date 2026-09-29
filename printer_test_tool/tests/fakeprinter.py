@@ -5,7 +5,8 @@ import threading
 import tty
 STATUS = {1: 0x16, 2: 0x12, 3: 0x12, 4: 0x12}   # 1: 0x16 = 드로어핀 High (정상)
 class Fake:
-    def __init__(self, paper_out_after=None, info=True):
+    def __init__(self, paper_out_after=None, info=True, status_reply=True):
+        self.status_reply = status_reply
         self.kanji = True
         self.info = info
         self.font_b = False
@@ -35,7 +36,8 @@ class Fake:
                     n = b[2]; self.stats["status_q"] += 1
                     v = STATUS.get(n, 0x12)
                     if n == 4 and self.paper_out_after is not None and self.stats["cuts"] >= self.paper_out_after: v = 0x72
-                    os.write(self.m, bytes([v]))
+                    if self.status_reply:
+                        os.write(self.m, bytes([v]))
                 else: self.stats["errors"].append(f"DLE {b[1]}")
                 del b[:3]; continue
             if c == 0x1b:

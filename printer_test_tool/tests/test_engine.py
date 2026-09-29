@@ -161,6 +161,21 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(r.elapsed(), e1)    # 종료 후 경과 시간 고정
 
 
+class DiagnoseTest(unittest.TestCase):
+    def test_diagnose_finds_settings(self):
+        f = Fake()
+        r = engine.act_diagnose(f.path, log=lambda m: None)
+        self.assertEqual(r["found"], {"baud": 9600, "flow": "없음"})
+
+    def test_diagnose_one_way_prints_each_baud(self):
+        f = Fake(status_reply=False)
+        r = engine.act_diagnose(f.path, log=lambda m: None)
+        time.sleep(0.5)
+        self.assertIsNone(r["found"])
+        printed = [t for t in f.stats["text"] if t.startswith("==== BAUD")]
+        self.assertEqual(len(printed), len(engine.DIAG_BAUDS))
+
+
 class ManualTest(unittest.TestCase):
     def test_manual_is_up_to_date(self):
         """manual.html 은 make_manual.py 로 만든 최신본이어야 한다 (테스트 케이스 표 자동 생성)."""

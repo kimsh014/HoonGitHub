@@ -18,7 +18,7 @@ from transports import SerialTransport, TransportError, list_com_ports
 def _data_dir():
     """logs/results/settings 를 둘 폴더.
 
-    exe(또는 소스) 옆 폴더를 쓰되, 잠긴 POS 처럼 그 폴더에 쓸 수 없으면 사용자 문서\PrinterTester 로 대신한다.
+    exe(또는 소스) 옆 폴더를 쓰되, 잠긴 POS 처럼 그 폴더에 쓸 수 없으면 사용자 문서/PrinterTester 로 대신한다.
     """
     here = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
     try:
@@ -306,7 +306,11 @@ def probe(tr):
             if not tr.is_open:
                 tr.open()
             resp = tr.query(dle_eot(1), 1, 0.8)
-            return resp is not None
+            if resp is not None:
+                return True
+            # 상태 응답이 없는 프린터/케이블: 프린터 전원이 켜져 있으면 대개 DSR/CTS 가 ON
+            ln = tr.lines()
+            return bool(ln.get("DSR") or ln.get("CTS"))
         if not tr.is_open:
             tr.open()
         return True
@@ -332,6 +336,9 @@ def act_reconnect(session, label, cycles, cancel, long_print_first=False, timeou
     done = fail = 0
     was_up = probe(tr)
     session.log(f"[{label}] 재연결 감시 시작 (목표 {cycles}회). 현재 {'연결됨' if was_up else '끊김'} — 분리 후 다시 연결하세요")
+    if not was_up:
+        session.log(f"[{label}] ※ 프린터가 켜져 있는데 '끊김'이면 상태 응답도 신호선도 없는 것입니다. "
+                    f"1번 탭의 [진단]으로 통신 설정부터 맞추세요 ({tr.lines_text()})")
     t_end = time.time() + timeout_s
     while done < cycles and time.time() < t_end and not cancel.is_set():
         report(cancel, f"재연결 {done}/{cycles}회 — 지금 {'연결됨: 분리하세요' if was_up else '끊김: 다시 연결하세요'}",
@@ -465,6 +472,80 @@ def act_interleave(session, main_label, other_label, cancel=None):
     t.join()
     return {"suggest": None,
             "summary": f"{main_label} 영수증 3장 인쇄 중 {other_label} 1장 전송. 영수증끼리 섞이지 않았는지 확인"}
+
+
+# ---------------- 통신 진단 ----------------
+
+DIAG_BAUDS = (9600, 19200, 38400, 57600, 115200)
+DIAG_FLOWS = ("없음", "DTR/DSR", "RTS/CTS")
+
+
+def act_diagnose(port, cancel=None, log=print, fmt="8N1", force_print=True):
+    """COM 포트의 올바른 통신 설정을 찾는다.
+
+    1) 속도 × 흐름제어 조합마다 DLE EOT 1 을 보내 올바른 상태 응답이 오는 조합을 찾는다.
+    2) 응답이 전혀 없으면(단방향·RX 미결선) 흐름제어 없이 속도별로 한 줄씩 강제 인쇄 →
+       출력물에서 글자가 제대로 보이는 줄의 속도가 맞는 속도.
+    반환: {"found": {"baud":..,"flow":..} 또는 None, "summary": ...}
+    """
+    combos = [(b, f) for f in DIAG_FLOWS for b in DIAG_BAUDS]
+    lines_seen = {}
+    for k, (baud, flow) in enumerate(combos):
+        if cancel is not None and cancel.is_set():
+            return {"found": None, "summary": "중지됨"}
+        report(cancel, f"{port} {baud}bps 흐름제어 {flow} 시도", k, len(combos) + 1)
+        tr = SerialTransport("진단", port, baud, int(fmt[0]), fmt[1], int(fmt[2]), flow, write_timeout=1.5)
+        try:
+            tr.open()
+        except TransportError as e:
+            return {"found": None, "summary": f"{port} 를 열 수 없습니다: {e} (다른 프로그램이 쓰는 중인지 확인)"}
+        try:
+            if not lines_seen:
+                lines_seen = tr.lines()
+            try:
+                tr.write(b"\x1b@")                    # 초기화 (쓰레기 데이터 정리)
+                time.sleep(0.1)
+                resp = tr.query(dle_eot(1), 1, 0.6)
+            except TransportError:
+                resp = None
+        finally:
+            tr.close()
+        if resp and (resp[0] & 0x93) == 0x12:
+            found = {"baud": baud, "flow": flow}
+            s = (f"{port}: 응답 확인 — 속도 {baud}bps, 흐름제어 '{flow}', 상태 0x{resp[0]:02X}. "
+                 f"신호선 {' '.join(f'{a}={int(b)}' for a, b in lines_seen.items()) or '-'}")
+            log(f"[진단] {s}")
+            return {"found": found, "summary": s}
+    ln = " ".join(f"{a}={'ON' if b else 'off'}" for a, b in lines_seen.items()) or "알 수 없음"
+    msg = f"{port}: 어떤 속도·흐름제어에서도 상태 응답이 없습니다 (신호선 {ln})."
+    if not force_print:
+        return {"found": None, "summary": msg}
+    # 단방향일 수 있으니 속도별 강제 인쇄
+    report(cancel, f"{port} 속도별 강제 인쇄", len(combos), len(combos) + 1)
+    for baud in DIAG_BAUDS:
+        if cancel is not None and cancel.is_set():
+            break
+        tr = SerialTransport("진단", port, baud, int(fmt[0]), fmt[1], int(fmt[2]), "없음", write_timeout=2)
+        try:
+            tr.open()
+            tr.write(b"\x1b@" + f"==== BAUD {baud} : ABC 123 test OK ====\n".encode("ascii"))
+            time.sleep(0.8)
+        except TransportError:
+            pass
+        finally:
+            tr.close()
+    try:
+        tr = SerialTransport("진단", port, 9600, 8, "N", 1, "없음", write_timeout=2)
+        tr.open()
+        tr.write(b"\n\n\n\x1dVB\x00")          # 급지+컷
+    except TransportError:
+        pass
+    finally:
+        tr.close()
+    msg += (" 흐름제어 없이 속도별로 한 줄씩 인쇄했습니다 → 출력물에서 'BAUD ____ : ABC 123 test OK' 가 "
+            "깨끗하게 찍힌 줄의 속도를 쓰세요. 아무것도 안 나오면 케이블(TX 결선)·포트 번호·프린터 인터페이스 설정을 확인하세요.")
+    log(f"[진단] {msg}")
+    return {"found": None, "summary": msg}
 
 
 # ---------------- 프린터 정보 / 빠른 점검 ----------------
