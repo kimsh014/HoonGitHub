@@ -69,6 +69,9 @@ class Transport:
         """명령을 보내고 응답을 읽는다. 응답이 없으면 None."""
         return None
 
+    def query_until(self, cmd: bytes, end=b"\x00", timeout=1.0, maxlen=128):
+        return None
+
     def describe(self):
         return f"{self.label} [{self.kind}] {self.target}"
 
@@ -168,6 +171,29 @@ class SerialTransport(Transport):
             except Exception as e:
                 raise TransportError(f"{self.label}: 상태 조회 실패: {e}") from e
         return resp if resp else None
+
+    def query_until(self, cmd, end=b"\x00", timeout=1.0, maxlen=128):
+        """가변 길이 응답(예: GS I) — end 바이트가 올 때까지 읽는다. 없으면 None."""
+        if not self.is_open:
+            raise TransportError(f"{self.label}: 포트가 열려 있지 않습니다")
+        with self.lock:
+            try:
+                self.ser.reset_input_buffer()
+                self.ser.write(cmd)
+                self.ser.flush()
+                resp = bytearray()
+                deadline = time.perf_counter() + timeout
+                while time.perf_counter() < deadline and len(resp) < maxlen:
+                    waiting = self.ser.in_waiting
+                    if waiting:
+                        resp += self.ser.read(waiting)
+                        if end in resp:
+                            break
+                    else:
+                        time.sleep(0.01)
+            except Exception as e:
+                raise TransportError(f"{self.label}: 조회 실패: {e}") from e
+        return bytes(resp) if resp else None
 
     def urgent_query(self, cmd, nbytes=1, timeout=1.0):
         """흐름제어(BUSY)로 송신이 막혔을 때의 상태 조회.

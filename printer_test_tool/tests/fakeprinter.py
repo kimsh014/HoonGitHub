@@ -5,12 +5,15 @@ import threading
 import tty
 STATUS = {1: 0x16, 2: 0x12, 3: 0x12, 4: 0x12}   # 1: 0x16 = 드로어핀 High (정상)
 class Fake:
-    def __init__(self, paper_out_after=None):
+    def __init__(self, paper_out_after=None, info=True):
+        self.kanji = True
+        self.info = info
+        self.font_b = False
         self.m, self.s = pty.openpty()
         tty.setraw(self.s)
         self.path = os.ttyname(self.s)
         self.buf = bytearray()
-        self.stats = {"cuts": 0, "rasters": 0, "raster_bytes": 0, "barcodes": 0, "qr_print": 0, "errors": [], "status_q": 0, "lines": 0, "text": []}
+        self.stats = {"cuts": 0, "rasters": 0, "raster_bytes": 0, "barcodes": 0, "qr_print": 0, "errors": [], "status_q": 0, "info_q": 0, "lines": 0, "text": []}
         self.cur = bytearray()
         self.paper_out_after = paper_out_after
         threading.Thread(target=self.loop, daemon=True).start()
@@ -38,17 +41,26 @@ class Fake:
             if c == 0x1b:
                 if len(b) < 2: return
                 k = b[1]
-                ln = {0x40:2, 0x52:3, 0x61:3, 0x45:3, 0x2d:3, 0x64:3, 0x33:3, 0x32:2, 0x70:5, 0x74:3}.get(k)
+                ln = {0x40:2, 0x52:3, 0x61:3, 0x45:3, 0x2d:3, 0x64:3, 0x33:3, 0x32:2, 0x70:5, 0x74:3,
+                      0x4a:3, 0x4d:3, 0x7b:3, 0x56:3}.get(k)
                 if ln is None: self.stats["errors"].append(f"ESC {k:02x}"); del b[:2]; continue
                 if len(b) < ln: return
+                if k == 0x4d: self.font_b = b[2] == 1
                 del b[:ln]; continue
             if c == 0x1c:
                 if len(b) < 2: return
-                if b[1] == 0x26: del b[:2]; continue
+                if b[1] == 0x26: self.kanji = True; del b[:2]; continue
+                if b[1] == 0x2e: self.kanji = False; del b[:2]; continue
                 self.stats["errors"].append(f"FS {b[1]:02x}"); del b[:2]; continue
             if c == 0x1d:
                 if len(b) < 2: return
                 k = b[1]
+                if k == 0x49:
+                    if len(b) < 3: return
+                    self.stats["info_q"] += 1
+                    if self.info:
+                        os.write(self.m, b"_" + {65: b"FW1.23", 66: b"ACME", 67: b"TP-80", 68: b"SN0001"}.get(b[2], b"?") + b"\x00")
+                    del b[:3]; continue
                 if k in (0x42, 0x21, 0x68, 0x77, 0x48):
                     if len(b) < 3: return
                     del b[:3]; continue
@@ -95,7 +107,7 @@ class Fake:
             self.stats["lines"] += 1
             t = bytes(self.cur).decode("cp949", "replace")
             if len(self.stats["text"]) < 4000: self.stats["text"].append(t)
-            if "�" in t: self.stats["errors"].append("decode:" + t[:30])
+            if "�" in t and self.kanji: self.stats["errors"].append("decode:" + t[:30])
             w = len(self.cur)
-            if w > 48: self.stats["errors"].append(f"line too long {w}: {t[:40]}")
+            if w > 48 and self.kanji and not self.font_b: self.stats["errors"].append(f"line too long {w}: {t[:40]}")
             self.cur = bytearray()

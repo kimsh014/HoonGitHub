@@ -11,7 +11,7 @@ import threading
 import time
 
 import patterns
-from escpos import Receipt, dle_eot, parse_status
+from escpos import PRINTER_INFO, Receipt, dle_eot, gs_i, parse_status
 from transports import SerialTransport, TransportError, list_com_ports
 
 # exe(PyInstaller)로 실행하면 exe 가 있는 폴더에 logs/results/settings 를 만든다
@@ -136,6 +136,18 @@ class Session:
 
 # ---------------- 개별 동작 ----------------
 
+def report(task, msg=None, done=None, total=None):
+    """작업 진행 상황 보고. task 가 report() 를 가진 객체(GUI 작업)일 때만 동작, 아니면 무시."""
+    fn = getattr(task, "report", None)
+    if fn:
+        fn(msg, done, total)
+
+
+def long_print_data(session, label, n=5):
+    """'긴 인쇄' — 기본 길이 영수증 n 장 연속 (분리·커버 열기 등을 인쇄 도중에 하기 위한 용도)."""
+    return b"".join(patterns.pattern_receipt(session.opts, label, i) for i in range(1, n + 1))
+
+
 def send(session, label, data, what="", csvlog=None, seq="", check_status=False, cancel=None):
     """전송 + (선택) 상태 확인. 결과 dict."""
     tr = session.get(label)
@@ -170,6 +182,7 @@ def act_burst(session, label, pattern_name, count, cancel, tag=""):
     for i in range(1, count + 1):
         if cancel.is_set():
             break
+        report(cancel, f"{i}/{count}장 전송 중", i - 1, count)
         try:
             r = send(session, label, fn(session.opts, ch, i), pattern_name, csvlog, i, check_status=(i == count), cancel=cancel)
             total_b += r["bytes"]
@@ -185,11 +198,25 @@ def act_burst(session, label, pattern_name, count, cancel, tag=""):
     return {"suggest": "FAIL" if fail else None, "summary": s}
 
 
+def act_burst_pattern(session, label, pattern_name, count, cancel):
+    """PATTERNS 의 패턴을 연속 인쇄 (예: 전면 검정 연속 → 헤드 과열 보호 확인)."""
+    fn = patterns.PATTERNS[pattern_name]
+    for i in range(1, count + 1):
+        if cancel.is_set():
+            return {"suggest": None, "summary": "중지됨"}
+        report(cancel, f"{pattern_name} {i}/{count}", i - 1, count)
+        send(session, label, fn(session.opts, channel=label), f"{pattern_name} {i}/{count}", cancel=cancel)
+    text, code = status_summary(read_status(session.get(label)))
+    return {"suggest": "FAIL" if code == "ERROR" else None,
+            "summary": f"{pattern_name} {count}장 연속 인쇄. 상태: {text}. 인쇄 흐려짐·속도 저하 확인"}
+
+
 def act_cut(session, label, count, cancel):
-    for partial in (True, False):
+    for k, partial in enumerate((True, False)):
         for i in range(1, count + 1):
             if cancel.is_set():
                 return {"suggest": None, "summary": "중지됨"}
+            report(cancel, f"{'부분' if partial else '전체'} 컷 {i}/{count}", k * count + i - 1, 2 * count)
             session.get(label).write(patterns.pattern_cut(session.opts, label, i, partial))
             time.sleep(0.3)
     st = read_status(session.get(label))
@@ -222,14 +249,16 @@ def act_status_monitor(session, label, seconds, cancel, long_print=False):
     if not tr.supports_status:
         return {"suggest": "N/A", "summary": "이 연결은 상태 조회를 지원하지 않습니다"}
     if long_print:
-        threading.Thread(target=lambda: _safe_write(session, label, patterns.pattern_speed(session.opts, label, 500)),
-                         daemon=True).start()
-        session.log(f"[{label}] 500mm 인쇄 전송 — 인쇄 중에 커버를 열어 보세요")
+        data = long_print_data(session, label)
+        threading.Thread(target=lambda: _safe_write(session, label, data), daemon=True).start()
+        session.log(f"[{label}] 영수증 5장 연속 전송 — 인쇄 중에 커버를 열어 보세요")
     last = None
     changes = []
     t_end = time.time() + seconds
     session.log(f"[{label}] 상태 감시 {seconds}초 시작 (센서를 조작하세요)")
     while time.time() < t_end and not cancel.is_set():
+        left = int(t_end - time.time())
+        report(cancel, f"상태 감시 중 (남은 {left}초) — 현재: {last or '-'}", seconds - left, seconds)
         try:
             text = status_summary(read_status(tr, 0.5))[0]
         except TransportError as e:
@@ -278,15 +307,17 @@ def act_reconnect(session, label, cycles, cancel, long_print_first=False, timeou
         return {"suggest": None, "summary": "COM 연결에서만 자동 감지됩니다. Windows 프린터 연결은 분리/재연결 후 [패턴 인쇄]로 확인하세요"}
     csvlog = CsvLog(f"reconnect_{label}")
     if long_print_first:
-        threading.Thread(target=lambda: _safe_write(session, label, patterns.pattern_speed(session.opts, label, 500)),
-                         daemon=True).start()
-        session.log(f"[{label}] 긴 인쇄 전송 중 — 인쇄 도중에 분리/끊기 하세요")
+        data = long_print_data(session, label)
+        threading.Thread(target=lambda: _safe_write(session, label, data), daemon=True).start()
+        session.log(f"[{label}] 영수증 5장 연속 전송 중 — 인쇄 도중에 분리/끊기 하세요")
         time.sleep(1.5)
     done = fail = 0
     was_up = probe(tr)
     session.log(f"[{label}] 재연결 감시 시작 (목표 {cycles}회). 현재 {'연결됨' if was_up else '끊김'} — 분리 후 다시 연결하세요")
     t_end = time.time() + timeout_s
     while done < cycles and time.time() < t_end and not cancel.is_set():
+        report(cancel, f"재연결 {done}/{cycles}회 — 지금 {'연결됨: 분리하세요' if was_up else '끊김: 다시 연결하세요'}",
+               done, cycles)
         up = probe(tr)
         if was_up and not up:
             session.log(f"[{label}] {now_str()} 끊김 감지")
@@ -321,7 +352,8 @@ def act_comm_configs(session, label, configs, confirm, cancel):
         for baud, fmt in configs:
             if cancel.is_set():
                 break
-            if not confirm(f"프린터 통신 설정을 {baud} bps, {fmt} 로 바꾼 뒤 [확인]을 누르세요.\n(건너뛰려면 [취소])"):
+            report(cancel, f"{baud}bps {fmt} 시험 대기", len(results), len(configs))
+            if not confirm(f"[{label}]\n프린터 통신 설정을 {baud} bps, {fmt} 로 바꾼 뒤 [확인]을 누르세요.\n(건너뛰려면 [취소])"):
                 results.append(f"{baud}/{fmt}:건너뜀")
                 continue
             tr.close()
@@ -366,19 +398,21 @@ def act_mismatch(session, label, wrong_baud, cancel=None):
             "summary": f"{wrong_baud}bps 로 쓰레기 데이터 전송 후 {right}bps 복귀 인쇄. 상태: {r['text']}"}
 
 
-def act_all_channels(session, cancel=None):
-    """X01 — 연결된 모든 채널로 차례로 인쇄."""
+def act_all_channels(session, cancel=None, labels=None):
+    """X01 — 지정 채널(없으면 연결된 전체)로 차례로 인쇄."""
     res = []
-    for tr in session.open_channels():
-        r = send(session, tr.label, patterns.pattern_info(session.opts, tr.label, "3포트 순차 인쇄"), "순차 인쇄",
+    trs = [session.get(l) for l in labels] if labels else session.open_channels()
+    for k, tr in enumerate(trs):
+        report(cancel, f"{tr.label} 인쇄", k, len(trs))
+        r = send(session, tr.label, patterns.pattern_info(session.opts, tr.label, "순차 인쇄"), "순차 인쇄",
                  check_status=True)
         res.append(f"{tr.label}:{r['code']}")
     return {"suggest": None, "summary": "채널별: " + ", ".join(res) + " — 각 채널 출력 확인"}
 
 
-def act_concurrent(session, cancel=None, lines=30):
-    """X02 — 모든 채널에 동시에 전송. 줄마다 채널 이름이 있어 섞이면 바로 보인다."""
-    chans = session.open_channels()
+def act_concurrent(session, cancel=None, lines=16, labels=None):
+    """X02 — 지정 채널(없으면 연결된 전체)에 동시에 전송. 줄마다 채널 이름이 있어 섞이면 바로 보인다."""
+    chans = [session.get(l) for l in labels] if labels else session.open_channels()
     if len(chans) < 2:
         return {"suggest": None, "summary": "2개 이상 채널을 연결해야 합니다"}
     barrier = threading.Barrier(len(chans))
@@ -405,14 +439,57 @@ def act_concurrent(session, cancel=None, lines=30):
 
 def act_interleave(session, main_label, other_label, cancel=None):
     """X03 — main 채널로 긴 인쇄 중 other 채널로 전송."""
-    t = threading.Thread(target=lambda: _safe_write(session, main_label,
-                                                    patterns.pattern_channel_mark(session.opts, main_label, 1, 120)))
+    main_data = b"".join(patterns.pattern_channel_mark(session.opts, main_label, i, 16) for i in (1, 2, 3))
+    t = threading.Thread(target=lambda: _safe_write(session, main_label, main_data))
     t.start()
-    time.sleep(1.0)
-    _safe_write(session, other_label, patterns.pattern_channel_mark(session.opts, other_label, 2, 10))
+    time.sleep(0.5)
+    _safe_write(session, other_label, patterns.pattern_channel_mark(session.opts, other_label, 9, 10))
     t.join()
     return {"suggest": None,
-            "summary": f"{main_label} 긴 인쇄(120줄) 중 {other_label} 10줄 전송. 섞임 없이 순서대로 나왔는지(또는 사양대로) 확인"}
+            "summary": f"{main_label} 영수증 3장 인쇄 중 {other_label} 1장 전송. 영수증끼리 섞이지 않았는지 확인"}
+
+
+# ---------------- 프린터 정보 / 빠른 점검 ----------------
+
+def read_info(tr, timeout=1.0):
+    """GS I 65~68 로 펌웨어/제조사/모델/시리얼 조회. 응답 형식: 0x5F + 문자열 + NUL. 지원 안 하면 빈 dict."""
+    if not tr.supports_status:
+        return {}
+    info = {}
+    for n, name in PRINTER_INFO.items():
+        resp = tr.query_until(gs_i(n), b"\x00", timeout)
+        if resp and resp[:1] == b"_":
+            info[name] = resp[1:].rstrip(b"\x00").decode("ascii", "replace").strip()
+    return info
+
+
+def act_info(session, label, cancel=None):
+    tr = session.get(label)
+    info = read_info(tr)
+    if not info:
+        return {"suggest": None, "info": {}, "summary": "프린터 정보 응답 없음 (GS I 미지원 모델이거나 단방향 연결)"}
+    text = ", ".join(f"{k}: {v}" for k, v in info.items())
+    session.log(f"[{label}] 프린터 정보 — {text}")
+    return {"suggest": "PASS", "info": info, "summary": f"프린터 정보: {text}"}
+
+
+def act_quick_check(session, label, cancel=None):
+    """빠른 점검 — 연결 → 프린터 정보 → 상태 → 확인 영수증 인쇄."""
+    report(cancel, "연결/정보 조회", 0, 3)
+    tr = session.get(label)
+    info = read_info(tr) if tr.supports_status else {}
+    report(cancel, "상태 조회", 1, 3)
+    text, code = status_summary(read_status(tr)) if tr.supports_status else ("상태조회 미지원", "NA")
+    note = "\n".join(f"{k}: {v}" for k, v in info.items())
+    note = (note + "\n" if note else "") + f"상태: {text}"
+    report(cancel, "확인 영수증 인쇄", 2, 3)
+    r = send(session, label, patterns.pattern_info(session.opts, label, note), "빠른 점검")
+    ok = code in ("OK", "WARN", "NA")
+    fw = info.get("펌웨어 버전", "")
+    summary = f"빠른 점검 {'정상' if ok else '이상'} — 상태 {text}" + (f", FW {fw}" if fw else "") + \
+        f", 전송 {r['bytes']:,}B {r['secs']:.2f}s. 영수증 출력 확인"
+    return {"suggest": "PASS" if code in ("OK", "WARN") else ("FAIL" if not ok else None), "info": info,
+            "summary": summary}
 
 
 # ---------------- 에이징 ----------------

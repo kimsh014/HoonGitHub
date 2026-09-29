@@ -49,7 +49,23 @@ class EngineTest(unittest.TestCase):
         self.settle()
         self.assertEqual(f.stats["errors"], [])
         self.assertEqual(f.stats["cuts"], len(patterns.PATTERNS))
-        self.assertGreaterEqual(f.stats["qr_print"], 5)
+        self.assertGreaterEqual(f.stats["qr_print"], 3)
+
+    def test_patterns_fit_receipt_length(self):
+        """모든 패턴(속도 시험 제외)은 기본 영수증 길이(120mm) 안에 들어가야 한다."""
+        orig, heights = patterns._finish, {}
+
+        def spy(r, o, fixed_length=True):
+            heights[name] = r.height_mm()
+            return orig(r, o, fixed_length)
+        patterns._finish = spy
+        try:
+            for name, fn in patterns.PATTERNS.items():
+                fn({"length_mm": 0}, "프린터1/RS232")
+        finally:
+            patterns._finish = orig
+        too_long = {k: round(v) for k, v in heights.items() if v > 120}
+        self.assertEqual(too_long, {})
 
     def test_status_parse(self):
         self.assertEqual(parse_status(1, 0x16)["text"], "드로어 핀 High")
@@ -69,7 +85,7 @@ class EngineTest(unittest.TestCase):
         r = engine.AgingRunner(self.s, ["USB", "BT"], "교대", "영수증", count=6, interval=0)
         r.run()
         self.assertEqual((r.stats["USB"]["ok"], r.stats["BT"]["ok"]), (3, 3))
-        r = engine.AgingRunner(self.s, ["USB", "BT"], "동시", "채널 표시(짧게)", count=6, interval=0)
+        r = engine.AgingRunner(self.s, ["USB", "BT"], "동시", "채널 표시", count=6, interval=0)
         r.run()
         self.settle()
         self.assertEqual(r.total, 6)
@@ -143,6 +159,18 @@ class EngineTest(unittest.TestCase):
         e1 = r.elapsed()
         time.sleep(0.3)
         self.assertEqual(r.elapsed(), e1)    # 종료 후 경과 시간 고정
+
+
+class ManualTest(unittest.TestCase):
+    def test_manual_is_up_to_date(self):
+        """manual.html 은 make_manual.py 로 만든 최신본이어야 한다 (테스트 케이스 표 자동 생성)."""
+        import make_manual
+        path = make_manual.OUT
+        with open(path, encoding="utf-8") as f:
+            before = f.read()
+        make_manual.main()
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(before, f.read(), "manual.html 이 최신이 아닙니다: python make_manual.py 실행 후 커밋")
 
 
 if __name__ == "__main__":

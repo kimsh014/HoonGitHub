@@ -10,14 +10,25 @@ DLE = b"\x10"
 LF = b"\n"
 
 
+DOT_MM = 25.4 / 203          # 203dpi 기준 1도트 ≈ 0.125mm
+DEFAULT_LINE_DOTS = 34       # ESC 2 기본 줄간격(1/6인치)
+QR_CAP_M = (14, 26, 42, 62, 84, 106, 122, 152, 180, 213)   # QR 버전별 바이트 용량(오류정정 M)
+
+
 class Receipt:
-    """ESC/POS 바이트열을 체이닝 방식으로 조립한다."""
+    """ESC/POS 바이트열을 체이닝 방식으로 조립한다.
+
+    height 에 인쇄 길이(도트)를 대략 누적해 두어, 영수증 길이를 일정하게 맞출 때 쓴다.
+    """
 
     def __init__(self, encoding="cp949", korean_mode=True, dots=576):
         self.encoding = encoding
         self.korean_mode = korean_mode
         self.dots = dots
         self.buf = bytearray()
+        self.height = 0
+        self._spacing = DEFAULT_LINE_DOTS
+        self._hmul = 1
 
     # ---- 기본 ----
     def raw(self, data: bytes):
@@ -26,6 +37,7 @@ class Receipt:
 
     def init(self):
         self.buf += ESC + b"@"
+        self._spacing, self._hmul = DEFAULT_LINE_DOTS, 1
         if self.korean_mode:
             # ESC R 13: 국제 문자셋 한국, FS &: 2바이트(한글) 모드 켜기
             self.buf += ESC + b"R" + bytes([13]) + FS + b"&"
@@ -35,11 +47,28 @@ class Receipt:
         self.buf += s.encode(self.encoding, errors="replace")
         return self
 
+    def _advance(self):
+        self.height += max(self._spacing, 24 * self._hmul)
+
     def line(self, s: str = ""):
-        return self.text(s).raw(LF)
+        self.text(s).raw(LF)
+        self._advance()
+        return self
 
     def feed(self, n=1):
-        self.buf += ESC + b"d" + bytes([max(0, min(255, n))])
+        n = max(0, min(255, n))
+        self.buf += ESC + b"d" + bytes([n])
+        self.height += n * self._spacing
+        return self
+
+    def feed_dots(self, n):
+        """ESC J n: n 도트 급지 (255 넘으면 나눠 보냄)."""
+        n = int(max(0, n))
+        self.height += n
+        while n > 0:
+            k = min(255, n)
+            self.buf += ESC + b"J" + bytes([k])
+            n -= k
         return self
 
     # ---- 서식 ----
@@ -61,13 +90,36 @@ class Receipt:
 
     def size(self, w=1, h=1):
         self.buf += GS + b"!" + bytes([((w - 1) << 4) | (h - 1)])
+        self._hmul = h
+        return self
+
+    def font(self, b=False):
+        """ESC M: 폰트 A(12x24) / B(9x17)."""
+        self.buf += ESC + b"M" + bytes([1 if b else 0])
+        return self
+
+    def upside_down(self, on=True):
+        """ESC {: 180도 뒤집어 인쇄."""
+        self.buf += ESC + b"{" + bytes([1 if on else 0])
+        return self
+
+    def rotate90(self, on=True):
+        """ESC V: 90도 회전 인쇄."""
+        self.buf += ESC + b"V" + bytes([1 if on else 0])
+        return self
+
+    def codepage(self, n):
+        """ESC t n: 문자 코드 테이블 선택."""
+        self.buf += ESC + b"t" + bytes([n])
         return self
 
     def line_spacing(self, dots=None):
         if dots is None:
             self.buf += ESC + b"2"
+            self._spacing = DEFAULT_LINE_DOTS
         else:
             self.buf += ESC + b"3" + bytes([dots])
+            self._spacing = dots
         return self
 
     def reset_style(self):
@@ -99,7 +151,9 @@ class Receipt:
             self.buf += GS + b"k" + bytes([69, len(d)]) + d
         else:
             raise ValueError(kind)
-        return self.raw(LF)
+        self.raw(LF)
+        self.height += height + (30 if hri else 0) + 10
+        return self
 
     def qr(self, data: str, module=6, ecc="M"):
         d = data.encode("utf-8")
@@ -114,7 +168,10 @@ class Receipt:
         self.buf += fn(49, 69, bytes([ecc_n]))          # 오류 정정
         self.buf += fn(49, 80, b"0" + d)                # 데이터 저장
         self.buf += fn(49, 81, b"0")                    # 인쇄
-        return self.raw(LF)
+        self.raw(LF)
+        ver = next((i + 1 for i, c in enumerate(QR_CAP_M) if len(d) <= c), 12)
+        self.height += (17 + 4 * ver) * module + 10
+        return self
 
     # ---- 이미지 ----
     def raster(self, width_dots: int, rows):
@@ -131,7 +188,11 @@ class Receipt:
                 data.append(b)
         h = len(rows)
         self.buf += GS + b"v0" + bytes([0, wbytes & 0xFF, wbytes >> 8, h & 0xFF, h >> 8]) + data
+        self.height += h
         return self
+
+    def height_mm(self):
+        return self.height * DOT_MM
 
     def bytes(self) -> bytes:
         return bytes(self.buf)
@@ -187,3 +248,11 @@ def parse_status(n: int, b: int) -> dict:
         "warn": warn,
         "text": ", ".join(flags) if flags else "정상",
     }
+
+
+# ---- 프린터 정보 (GS I n) ----
+PRINTER_INFO = {65: "펌웨어 버전", 66: "제조사", 67: "모델명", 68: "시리얼 번호"}
+
+
+def gs_i(n: int) -> bytes:
+    return GS + b"I" + bytes([n])
