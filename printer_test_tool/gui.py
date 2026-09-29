@@ -240,6 +240,8 @@ class App(tk.Tk):
                 self.log(f"[{task.name}] 오류: {e!r}")
             finally:
                 task.ended = time.time()
+                if task.state == "완료" and task.total:
+                    task.done = task.total
                 if res and res.get("summary"):
                     task.msg = res["summary"]
 
