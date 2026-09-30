@@ -237,5 +237,44 @@ class ManualTest(unittest.TestCase):
             self.assertEqual(before, f.read(), "manual.html 이 최신이 아닙니다: python make_manual.py 실행 후 커밋")
 
 
+try:
+    import tkinter  # noqa: F401
+    HAS_TK = True
+except ImportError:
+    HAS_TK = False
+
+
+@unittest.skipUnless(HAS_TK, "tkinter 없음")
+class PosSettingsTest(unittest.TestCase):
+    """POS 간편 화면(pos_app) 의 설정 → 연결 변환."""
+
+    def test_transport_cfg(self):
+        import pos_app
+        with self.assertRaises(ValueError):
+            pos_app.transport_cfg({"kind": "COM", "port": ""})
+        self.assertEqual(pos_app.transport_cfg({"kind": "COM", "port": "COM1", "baud": "9600", "flow": "없음"}),
+                         {"kind": "COM", "port": "COM1", "baudrate": 9600, "flow": "없음"})
+        self.assertEqual(pos_app.transport_cfg({"kind": "WinPrinter", "printer": "P1"})["kind"], "WinPrinter")
+        self.assertEqual(pos_app.describe({"kind": "COM", "port": ""}), "설정 필요")
+
+    def test_settings_roundtrip_and_print(self):
+        import pos_app
+        path = os.path.join(tempfile.mkdtemp(), "pos.json")
+        s = pos_app.load_settings(path)                 # 파일 없으면 기본값
+        f = Fake()
+        s["ifaces"]["RS232"]["port"] = f.path
+        pos_app.save_settings(s, path)
+        s2 = pos_app.load_settings(path)
+        self.assertEqual(s2["ifaces"]["RS232"]["port"], f.path)
+        sess = engine.Session(log=lambda m: None)
+        sess.add(make_transport("RS232", pos_app.transport_cfg(s2["ifaces"]["RS232"])))
+        try:
+            engine.act_print(sess, "RS232", "영수증")
+            time.sleep(0.5)
+        finally:
+            sess.close_all()
+        self.assertEqual((f.stats["cuts"], f.stats["errors"]), (1, []))
+
+
 if __name__ == "__main__":
     unittest.main()

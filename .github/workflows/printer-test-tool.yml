@@ -50,9 +50,11 @@ jobs:
       - run: pip install -r requirements.txt "${{ matrix.pyinstaller }}"
       - run: python make_manual.py
       - run: python -m PyInstaller --noconfirm --onefile --windowed --name PrinterTester --add-data "manual.html;." gui.py
+      - run: python -m PyInstaller --noconfirm --onefile --windowed --name PrinterTestPOS pos_app.py
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: |
             printer_test_tool/dist/PrinterTester.exe
+            printer_test_tool/dist/PrinterTestPOS.exe
             printer_test_tool/manual.html
