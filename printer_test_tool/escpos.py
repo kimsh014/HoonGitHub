@@ -13,6 +13,7 @@ LF = b"\n"
 
 DOT_MM = 25.4 / 203          # 203dpi 기준 1도트 ≈ 0.125mm
 DEFAULT_LINE_DOTS = 34       # ESC 2 기본 줄간격(1/6인치)
+RASTER_BAND = 24             # GS v 0 한 번에 보내는 최대 행 수 (버퍼 넘침 방지)
 QR_CAP_M = (14, 26, 42, 62, 84, 106, 122, 152, 180, 213)   # QR 버전별 바이트 용량(오류정정 M)
 
 
@@ -175,21 +176,29 @@ class Receipt:
         return self
 
     # ---- 이미지 ----
-    def raster(self, width_dots: int, rows):
-        """rows: 각 행이 0/1 리스트(길이 width_dots). GS v 0 래스터 인쇄."""
+    def raster(self, width_dots: int, rows, band=RASTER_BAND):
+        """rows: 각 행이 0/1 리스트(길이 width_dots). GS v 0 래스터 인쇄.
+
+        한 번의 GS v 0 에 큰 이미지를 담으면 수신 버퍼(보통 4KB)를 넘거나 펌웨어 한도에 걸려
+        데이터가 잘리고, 남은 이미지 바이트가 글자로 해석되어 쓰레기 문자가 찍힌다.
+        그래서 band 행씩(24행 x 72바이트 = 1.7KB) 나눠 보낸다.
+        """
         wbytes = (width_dots + 7) // 8
-        data = bytearray()
-        for row in rows:
-            for bx in range(wbytes):
-                b = 0
-                for bit in range(8):
-                    x = bx * 8 + bit
-                    if x < width_dots and row[x]:
-                        b |= 0x80 >> bit
-                data.append(b)
-        h = len(rows)
-        self.buf += GS + b"v0" + bytes([0, wbytes & 0xFF, wbytes >> 8, h & 0xFF, h >> 8]) + data
-        self.height += h
+        rows = list(rows)
+        for start in range(0, len(rows), band):
+            part = rows[start:start + band]
+            data = bytearray()
+            for row in part:
+                for bx in range(wbytes):
+                    b = 0
+                    for bit in range(8):
+                        x = bx * 8 + bit
+                        if x < width_dots and row[x]:
+                            b |= 0x80 >> bit
+                    data.append(b)
+            h = len(part)
+            self.buf += GS + b"v0" + bytes([0, wbytes & 0xFF, wbytes >> 8, h & 0xFF, h >> 8]) + data
+        self.height += len(rows)
         return self
 
     def height_mm(self):

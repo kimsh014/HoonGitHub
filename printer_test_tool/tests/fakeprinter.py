@@ -98,6 +98,7 @@ class Fake:
                     if xl > 72: self.stats["errors"].append(f"raster too wide {xl}")
                     if len(b) < 8 + xl*yl: return
                     self.stats["rasters"] += 1; self.stats["raster_bytes"] += xl*yl
+                    self.stats["raster_max_bytes"] = max(self.stats.get("raster_max_bytes", 0), xl*yl)
                     del b[:8+xl*yl]; continue
                 self.stats["errors"].append(f"GS {k:02x}"); del b[:2]; continue
             if c == 0x0a:

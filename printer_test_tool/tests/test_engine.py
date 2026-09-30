@@ -68,6 +68,17 @@ class EngineTest(unittest.TestCase):
         too_long = {k: round(v) for k, v in heights.items() if v > 120}
         self.assertEqual(too_long, {})
 
+    def test_large_image_is_sent_in_small_bands(self):
+        """대용량 이미지가 한 덩어리(46KB)로 가면 프린터 버퍼를 넘어 쓰레기 문자가 찍힌다."""
+        f = Fake()
+        connect(self.s, "RS232", f)
+        engine.act_print(self.s, "RS232", "대용량 이미지", self.cancel)
+        self.settle()
+        self.assertEqual(f.stats["errors"], [])
+        self.assertLessEqual(f.stats["raster_max_bytes"], 24 * 72)
+        self.assertGreaterEqual(f.stats["raster_bytes"], 640 * 72)
+        self.assertTrue(any("이 줄이 보이면 누락 없음" in t for t in f.stats["text"]))
+
     def test_status_parse(self):
         self.assertEqual(parse_status(1, 0x16)["text"], "드로어 핀 High")
         self.assertTrue(parse_status(4, 0x72)["error"])
