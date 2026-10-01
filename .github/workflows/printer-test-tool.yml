@@ -1,0 +1,60 @@
+name: printer-test-tool
+
+on:
+  push:
+    paths:
+      - "printer_test_tool/**"
+      - ".github/workflows/printer-test-tool.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: printer_test_tool
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+
+  build-exe:
+    needs: test
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows 10/11 64비트
+          - name: PrinterTester-windows
+            python: "3.11"
+            arch: x64
+            pyinstaller: "pyinstaller"
+          # Windows 7 / POSReady 7 / 32비트 POS (64비트 Windows 에서도 실행됨)
+          - name: PrinterTester-win7-32bit
+            python: "3.8"
+            arch: x86
+            pyinstaller: "pyinstaller==5.13.2"
+    defaults:
+      run:
+        working-directory: printer_test_tool
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: ${{ matrix.arch }}
+      - run: pip install -r requirements.txt "${{ matrix.pyinstaller }}"
+      - run: python make_manual.py
+      - run: python -m PyInstaller --noconfirm --onefile --windowed --name PrinterTester --add-data "manual.html;." gui.py
+      - run: python -m PyInstaller --noconfirm --onefile --windowed --name PrinterTestPOS pos_app.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            printer_test_tool/dist/PrinterTester.exe
+            printer_test_tool/dist/PrinterTestPOS.exe
+            printer_test_tool/manual.html
