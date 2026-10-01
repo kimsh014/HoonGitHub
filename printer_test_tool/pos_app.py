@@ -49,6 +49,13 @@ PRINT_ITEMS = (
     ("상태 조회", "status", None),
 )
 
+# 통신별로 뺄 항목. BT: '텍스트 서식' 인쇄 후 블루투스 연결이 먹통이 되는 현상이 있어 제외 (2026-10-01)
+EXCLUDE = {"BT": {"텍스트 서식"}}
+
+
+def items_for(name):
+    return [it for it in PRINT_ITEMS if it[0] not in EXCLUDE.get(name, ())]
+
 DEFAULT_SETTINGS = {
     "printer_name": "프린터1",
     "dots": 576,
@@ -256,7 +263,7 @@ class PosApp:
         grid.pack(fill="both", expand=True)
         cols = 4
         self.item_btns = []
-        for i, (label, kind, pat) in enumerate(PRINT_ITEMS):
+        for i, (label, kind, pat) in enumerate(items_for(name)):
             r, c = divmod(i, cols)
             grid.columnconfigure(c, weight=1, uniform="b")
             grid.rowconfigure(r, weight=1, uniform="r")
