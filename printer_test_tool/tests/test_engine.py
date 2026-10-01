@@ -257,11 +257,12 @@ class PosSettingsTest(unittest.TestCase):
         self.assertEqual(pos_app.transport_cfg({"kind": "WinPrinter", "printer": "P1"})["kind"], "WinPrinter")
         self.assertEqual(pos_app.describe({"kind": "COM", "port": ""}), "설정 필요")
 
-    def test_bt_has_no_text_format(self):
+    def test_same_items_without_text_format(self):
         import pos_app
-        names = lambda n: [i[0] for i in pos_app.items_for(n)]
-        self.assertNotIn("텍스트 서식", names("BT"))
-        self.assertIn("텍스트 서식", names("RS232"))
+        names = {n: [i[0] for i in pos_app.items_for(n)] for n, _, _ in pos_app.IFACES}
+        self.assertEqual(names["RS232"], names["USB"])
+        self.assertEqual(names["RS232"], names["BT"])
+        self.assertNotIn("텍스트 서식", names["RS232"])
 
     def test_settings_roundtrip_and_print(self):
         import pos_app

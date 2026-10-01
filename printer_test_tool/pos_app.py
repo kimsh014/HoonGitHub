@@ -41,7 +41,6 @@ PRINT_ITEMS = (
     ("QR 코드", "pattern", "QR 코드"),
     ("이미지", "pattern", "이미지"),
     ("대용량 이미지", "pattern", "대용량 이미지"),
-    ("텍스트 서식", "pattern", "텍스트 서식"),
     ("농도", "pattern", "농도"),
     ("헤드 도트 체크", "pattern", "헤드 도트 체크"),
     ("컷 (부분+전체)", "cut", None),
@@ -49,12 +48,12 @@ PRINT_ITEMS = (
     ("상태 조회", "status", None),
 )
 
-# 통신별로 뺄 항목. BT: '텍스트 서식' 인쇄 후 블루투스 연결이 먹통이 되는 현상이 있어 제외 (2026-10-01)
-EXCLUDE = {"BT": {"텍스트 서식"}}
+# '텍스트 서식'은 BT 모델에서 인쇄 후 블루투스가 먹통이 되는 현상이 있어 모든 통신에서 제외 (2026-10-01).
+# 세 통신 화면은 항상 같은 항목을 보여준다.
 
 
 def items_for(name):
-    return [it for it in PRINT_ITEMS if it[0] not in EXCLUDE.get(name, ())]
+    return list(PRINT_ITEMS)
 
 DEFAULT_SETTINGS = {
     "printer_name": "프린터1",
