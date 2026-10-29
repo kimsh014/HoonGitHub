@@ -68,7 +68,7 @@ td.id{white-space:nowrap;font-weight:700}
 <h2 id="s2">2. 화면 구성</h2>
 <table><tr><th style="width:24%">영역</th><th>하는 일</th></tr>
 <tr><td><b>1. 프린터 연결</b> 탭</td><td>프린터마다 이름을 붙이고 RS232 / USB / BT 연결을 각각 설정·연결. 빠른 점검.</td></tr>
-<tr><td><b>2. 테스트 케이스</b> 탭</td><td>145개 시험 항목. 프린터와 통신을 골라 <span class="btn">▶ 실행</span> → 출력물 확인 → 판정 저장.</td></tr>
+<tr><td><b>2. 테스트 케이스</b> 탭</td><td>165개 시험 항목. 프린터와 통신을 골라 <span class="btn">▶ 실행</span> → 출력물 확인 → 판정 저장.</td></tr>
 <tr><td><b>3. 에이징</b> 탭</td><td>여러 프린터·통신을 체크해 동시에 연속 인쇄. 대상별 진행 현황 표.</td></tr>
 <tr><td><b>4. 패턴 인쇄 / 명령</b> 탭</td><td>패턴 골라 인쇄, 상태·프린터 정보 조회, HEX 명령 직접 전송.</td></tr>
 <tr><td><b>작업 현황</b> (화면 아래, 항상 보임)</td><td>지금 실행 중인 모든 작업 — <b>무엇을, 어느 프린터/통신에서, 몇 %까지</b> — 표시. 여기서 <span class="btn">■ 선택 작업 중지</span> · <span class="btn">■ 모두 중지</span>.</td></tr>
@@ -118,7 +118,7 @@ td.id{white-space:nowrap;font-weight:700}
 <li>연결이 끊기면 자동 재연결을 시도합니다 (자동 재연결 옵션).</li>
 <li>영수증마다 <b>순번</b>이 찍힙니다. 아침에 순번이 빠진 곳이 없는지 보세요.</li>
 <li>로그 CSV: <code>logs\날짜_aging_기본_프린터명_통신.csv</code> — 결과 열이 FAIL / ERROR / NORESP 인 행이 문제 기록입니다. 에이징 중에 엑셀로 열어 봐도 됩니다.</li>
-<li>끝나면 요약이 해당 프린터의 <b>S31</b>(RS232)·<b>BT40</b>(BT)·<b>F55</b>(그 외) 비고에 자동 기록됩니다.</li>
+<li>끝나면 요약이 해당 프린터의 <b>S31</b>(RS232)·<b>U15</b>(USB)·<b>BT40</b>(BT)·<b>F55</b>(그 외) 비고에 자동 기록됩니다.</li>
 </ul>
 
 <h2 id="s6">6. 작업 현황과 중지</h2>
@@ -159,10 +159,10 @@ td.id{white-space:nowrap;font-weight:700}
 <h2 id="s8">8. 결과 정리</h2>
 <ul>
 <li><span class="btn">계획표 엑셀에 결과 반영</span> — 시험 계획표(<code>TestPlan.xlsx</code>, exe 와 함께 제공)를 고르면 <b>프린터마다 새 파일</b>(<code>TestPlan_결과_샘플A_…xlsx</code>)을 만들어 완료 ✔·결과·시험자·시험일·결함ID·메모를 채웁니다. 원본은 그대로.</li>
-<li>계획표와 프로그램은 같은 145개 항목(ID 같음)을 씁니다. 계획표의 요약 시트(진행률·파트별·우선순위별)는 엑셀에서 열면 자동 계산됩니다.</li>
+<li>계획표와 프로그램은 같은 항목 목록(ID 같음)을 씁니다. 계획표의 요약 시트(진행률·파트별·우선순위별)는 엑셀에서 열면 자동 계산됩니다.</li>
 </ul>
 
-<h2 id="s9">9. 테스트 케이스 전체 목록 (145개)</h2>
+<h2 id="s9">9. 테스트 케이스 전체 목록 (165개)</h2>
 <p class="sub">실행 = 프로그램이 어떤 통신으로 실행하는지. "수동 확인"은 안내만 보고 직접 확인 후 판정.</p>
 <div class="tbl-wrap"><table>
 <tr><th style="width:6%">ID</th><th style="width:26%">항목 / 방법</th><th style="width:13%">실행</th><th style="width:22%">합격 기준</th><th>안내</th></tr>
@@ -182,6 +182,7 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td class="id">F13<div class="sub">권장</div></td><td><b>용지 장착</b><div class="sub">용지 · 처음 쓰는 사람이 설명서 없이 장착</div></td><td>수동 확인</td><td>30초 안에 장착, 덮개 정상 닫힘<div class="sub">왜: 현장 문의·잘못 장착</div></td><td class="sub"></td></tr>
 <tr><td class="id">F14<div class="sub">권장</div></td><td><b>용지 거꾸로 장착</b><div class="sub">용지 · 감열면을 반대로 넣고 인쇄</div></td><td>수동 확인</td><td>결과 기록 (백지 출력/오류 표시)<div class="sub">왜: &#x27;영수증이 하얗게 나온다&#x27; 민원 대응</div></td><td class="sub"></td></tr>
 <tr><td class="id">F15<div class="sub">필수</div></td><td><b>롤 지름·제조사</b><div class="sub">용지 · 최대·최소 롤, 다른 제조사 용지 2종</div></td><td>수동 확인</td><td>급지·인쇄 정상, 농도 차이 기록<div class="sub">왜: 시중 저가 용지에서 흐림·걸림</div></td><td class="sub"></td></tr>
+<tr><td class="id">F57<div class="sub">필수</div></td><td><b>친환경(페놀 없는) 감열지</b><div class="sub">용지 · BPA·BPS 없는 감열지로 농도 패턴 인쇄, 일반 용지와 비교</div></td><td>체크한 통신마다 각각</td><td>모든 단계 판독 가능, 농도 차이 기록 (필요 시 기본 농도 조정)<div class="sub">왜: BPA/BPS 규제·친환경 용지 확산 — 발색이 달라 흐리게 나올 수 있음</div></td><td class="sub">친환경(BPA·BPS 없는) 감열지를 넣고 [실행]. 일반 감열지 출력물과 나란히 놓고 단계별 농도를 비교하세요.</td></tr>
 <tr><td class="id">F16<div class="sub">필수</div></td><td><b>용지 끝부분</b><div class="sub">용지 · 코어에 붙은 끝부분까지 인쇄</div></td><td>수동 확인</td><td>용지 없음 감지, 헤드·커터 손상 없음<div class="sub">왜: 끝 테이프가 헤드에 붙음</div></td><td class="sub"></td></tr>
 <tr><td class="id">F17<div class="sub">필수</div></td><td><b>용지 걸림 복구</b><div class="sub">용지 · 걸림 유도 → 커버 열고 제거 → 인쇄</div></td><td>수동 확인</td><td>손상 없이 복구, 다음 인쇄 정상<div class="sub">왜: 현장 자가 조치 가능 여부</div></td><td class="sub"></td></tr>
 <tr><td class="id">F18<div class="sub">필수</div></td><td><b>긴 영수증</b><div class="sub">용지 · 1m 이상 한 장 연속 인쇄</div></td><td>체크한 통신마다 각각</td><td>비뚤어짐·밀림 없음<div class="sub">왜: 마감 정산서 등 긴 출력</div></td><td class="sub">길이를 1000mm 로 입력하세요. 1m 가 비뚤어지거나 밀리지 않고 나와야 합니다.</td></tr>
@@ -191,6 +192,7 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td class="id">F22<div class="sub">권장</div></td><td><b>빠른 연속 컷</b><div class="sub">커터 · 0.5초 간격 50회</div></td><td>체크한 통신마다 각각</td><td>걸림·과열 없음<div class="sub">왜: 바쁜 시간 연속 주문</div></td><td class="sub">짧은 영수증을 0.5초 간격으로 50번 자릅니다. 걸림·누락 번호를 확인하세요.</td></tr>
 <tr><td class="id">F23<div class="sub">필수</div></td><td><b>컷 후 다음 영수증 상단</b><div class="sub">커터 · 컷 → 바로 다음 인쇄, 상단 여백 확인</div></td><td>체크한 통신마다 각각</td><td>첫 줄 잘림 없음<div class="sub">왜: 다음 영수증 첫 줄(상호) 잘림</div></td><td class="sub">영수증 2장을 바로 이어서 인쇄합니다. 두 번째 영수증의 첫 줄(제목)이 잘리지 않아야 합니다.</td></tr>
 <tr><td class="id">F24<div class="sub">권장</div></td><td><b>커터 걸림 복구</b><div class="sub">커터 · 커터 걸림 상태에서 복구 방법 확인</div></td><td>수동 확인</td><td>복구 가능, 칼날 원위치<div class="sub">왜: 칼날이 안 돌아오면 사용 불가</div></td><td class="sub"></td></tr>
+<tr><td class="id">F58<div class="sub">필수</div></td><td><b>커터 청소 후 동작</b><div class="sub">커터 · 설명서의 청소 방법대로 커터 청소 → 부분/전체 컷 각 10회</div></td><td>체크한 통신마다 각각</td><td>청소 후 걸림·절단 불량 없음, 설명서 청소 방법이 실제로 가능<div class="sub">왜: 날에 종이 가루·접착제 누적이 커터 고장 1순위, 잘못된 청소(알코올·면봉)로 수명 단축</div></td><td class="sub">설명서대로 커터를 청소한 뒤 [실행]. 부분·전체 컷 각 10회가 걸림 없이 되어야 합니다.</td></tr>
 <tr><td class="id">F25<div class="sub">필수</div></td><td><b>용지 없음 센서</b><div class="sub">센서·표시 · 용지 제거 후 인쇄 → 넣기</div></td><td>체크한 통신마다 각각</td><td>에러 표시·중지, 넣으면 복구<div class="sub">왜: 백지 출력·헤드 손상</div></td><td class="sub">60초 동안 상태를 감시합니다. 그동안 용지를 빼고 다시 넣으세요. &#x27;용지 없음&#x27;이 감지·해제되면 자동 Pass.</td></tr>
 <tr><td class="id">F26<div class="sub">필수</div></td><td><b>커버 오픈 감지</b><div class="sub">센서·표시 · 인쇄 중 커버 열기 → 닫기</div></td><td>체크한 통신마다 각각</td><td>즉시 정지·에러, 닫으면 복구<div class="sub">왜: 손가락 안전, 내용 유실</div></td><td class="sub">긴 인쇄가 시작되면 인쇄 중에 커버를 열었다 닫으세요. 즉시 멈추고 닫으면 복구되어야 합니다.</td></tr>
 <tr><td class="id">F27<div class="sub">권장</div></td><td><b>커버 열린 채 전원 ON</b><div class="sub">센서·표시 · 커버 열고 전원 켠 뒤 닫기</div></td><td>수동 확인</td><td>오류 표시, 닫으면 정상 동작<div class="sub">왜: 부팅 순서 문제로 먹통</div></td><td class="sub"></td></tr>
@@ -223,6 +225,7 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td class="id">F54<div class="sub">선택</div></td><td><b>소비 전력</b><div class="sub">성능 · 대기 / 인쇄 / 전면 검정 전력 측정</div></td><td>수동 확인</td><td>사양 이내 (측정값 기록)<div class="sub">왜: 어댑터 용량 부족</div></td><td class="sub"></td></tr>
 <tr><td class="id">F55<div class="sub">필수</div></td><td><b>기본 에이징</b><div class="sub">장시간 · 영수증 연속 8시간 이상 (야간)</div></td><td>체크한 통신마다 각각</td><td>멈춤·누락·과열 이상 없음<div class="sub">왜: 장시간 사용 안정성</div></td><td class="sub">에이징 탭에서 프린터·통신을 골라 8시간 이상 실행하세요. 결과가 이 항목 비고에 기록됩니다.</td></tr>
 <tr><td class="id">F56<div class="sub">선택</div></td><td><b>커터 내구</b><div class="sub">장시간 · 수천 회 연속 컷 (사양 수명 일부)</div></td><td>체크한 통신마다 각각</td><td>걸림·절단 불량 없음<div class="sub">왜: 커터 수명 검증</div></td><td class="sub">짧은 영수증 500장(입력 가능)을 1초 간격으로 자릅니다. 수천 회가 필요하면 여러 번 실행하세요.</td></tr>
+<tr><td class="id">F59<div class="sub">권장</div></td><td><b>수명 사양 검증</b><div class="sub">장시간 · 사양서의 헤드 수명(km)·커터 수명(회)·MCBF 를 업계 기준(헤드 약 150km, 커터 150만~180만 회, MCBF 6천만~7천만 줄)과 비교, 헤드 주행거리 가속 시험(연속 인쇄 m 수 기록)</div></td><td>체크한 통신마다 각각</td><td>사양 수치 확보·업계 기준 이상, 가속 시험 중 품질 저하 없음<div class="sub">왜: AS·보증 기간 산정 근거, 경쟁 제품 비교</div></td><td class="sub">사양서 수치를 비고에 적고, 에이징 탭에서 &#x27;대용량 이미지&#x27; 패턴으로 장시간 실행해 주행거리(m)를 기록하세요.</td></tr>
 <tr class="cat"><td colspan="5">2. 시리얼(RS232)</td></tr>
 <tr><td class="id">S01<div class="sub">필수</div></td><td><b>기본 설정 연결</b><div class="sub">통신 설정 · 9600 / 8N1 / 흐름제어 없음 → 연결 확인</div></td><td>RS232</td><td>정상 출력<div class="sub">왜: 기본 출고 설정 확인</div></td><td class="sub">1. 프린터 연결 탭에서 RS232 를 9600 / 8N1 / 흐름제어 없음으로 연결한 뒤 [실행].</td></tr>
 <tr><td class="id">S02<div class="sub">필수</div></td><td><b>셀프 테스트 값 = 실제</b><div class="sub">통신 설정 · 셀프 테스트에 찍힌 통신 설정으로 연결</div></td><td>RS232</td><td>그대로 연결됨<div class="sub">왜: 설명서·셀프 테스트 값이 틀리면 설치 불가</div></td><td class="sub">셀프 테스트에 찍힌 속도·형식으로 연결 설정을 맞춘 뒤 [실행].</td></tr>
@@ -255,7 +258,23 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td class="id">S29<div class="sub">권장</div></td><td><b>RS232 + BT 동시</b><div class="sub">동시 사용 · 번갈아 / 동시 인쇄</div></td><td>체크한 통신 함께</td><td>섞임 없음, 둘 다 정상<div class="sub">왜: 포트 2개 동시 사용 매장</div></td><td class="sub">RS232 와 BT 를 함께 체크하고 [실행]. 두 영수증의 내용이 섞이지 않아야 합니다.</td></tr>
 <tr><td class="id">S30<div class="sub">권장</div></td><td><b>RS232 + USB 동시</b><div class="sub">동시 사용 · 번갈아 / 동시 인쇄</div></td><td>체크한 통신 함께</td><td>섞임 없음, 둘 다 정상<div class="sub">왜: 포트 2개 동시 사용 매장</div></td><td class="sub">RS232 와 USB 를 함께 체크하고 [실행].</td></tr>
 <tr><td class="id">S31<div class="sub">필수</div></td><td><b>RS232 에이징</b><div class="sub">장시간 · 연속 인쇄 8시간 이상</div></td><td>RS232</td><td>끊김·누락 0건<div class="sub">왜: 장시간 안정성</div></td><td class="sub">에이징 탭에서 RS232 를 골라 8시간 이상 실행하세요.</td></tr>
-<tr class="cat"><td colspan="5">3. 블루투스</td></tr>
+<tr class="cat"><td colspan="5">3. USB</td></tr>
+<tr><td class="id">U01<div class="sub">필수</div></td><td><b>USB 연결 인식</b><div class="sub">연결·인식 · 처음 연결 → 장치 관리자에 USB 프린터/가상 COM 으로 인식, 드라이버 설치</div></td><td>USB</td><td>자동 인식 또는 드라이버로 1회 설치, 장치 이름 기록<div class="sub">왜: 설치 단계에서 막히면 사용 불가</div></td><td class="sub">USB 를 꽂은 뒤 [실행]하면 COM 포트·Windows 프린터 목록이 나옵니다. 인식된 이름을 비고에 적으세요.</td></tr>
+<tr><td class="id">U02<div class="sub">필수</div></td><td><b>기본 출력</b><div class="sub">연결·인식 · 연결 → 정보 → 상태 → 확인 영수증</div></td><td>USB</td><td>모두 정상<div class="sub">왜: 기본 기능</div></td><td class="sub">1. 프린터 연결 탭에서 USB 를 연결한 뒤 [실행].</td></tr>
+<tr><td class="id">U03<div class="sub">필수</div></td><td><b>PC 재부팅 후 자동 인식</b><div class="sub">연결·인식 · PC 재부팅 → 프로그램 실행 → 인쇄</div></td><td>USB</td><td>추가 조작 없이 인쇄<div class="sub">왜: 매일 PC 부팅</div></td><td class="sub">PC 를 재부팅하고 프로그램을 실행한 뒤 다른 조작 없이 [실행].</td></tr>
+<tr><td class="id">U04<div class="sub">필수</div></td><td><b>다른 USB 포트에 꽂기</b><div class="sub">연결·인식 · 다른 USB 포트(앞·뒤, USB2/3)에 꽂고 장치 관리자 확인 → 인쇄</div></td><td>USB</td><td>포트·COM 번호 변화 기록, 바뀌면 재설정 방법 안내<div class="sub">왜: 포트 번호가 바뀌어 POS 가 프린터를 못 찾음</div></td><td class="sub">다른 USB 포트에 꽂은 뒤 [실행]해 포트 이름이 바뀌었는지 보세요. 바뀌었으면 1. 연결 탭에서 다시 선택하고 인쇄.</td></tr>
+<tr><td class="id">U05<div class="sub">필수</div></td><td><b>Windows 업데이트 후 유지</b><div class="sub">Windows · Windows 업데이트(가능하면 기능 업데이트) 후 장치·포트·인쇄 확인</div></td><td>USB</td><td>프린터·포트 그대로 유지 (사라지면 재설치 절차 기록)<div class="sub">왜: 큰 업데이트 후 USB 영수증 프린터가 제거·포트 변경되는 사례가 많음</div></td><td class="sub">Windows 업데이트 후 재부팅 → 프로그램에서 USB 연결 → [실행]. 연결이 안 되면 장치 관리자 상태와 재설치 절차를 비고에 적으세요.</td></tr>
+<tr><td class="id">U06<div class="sub">필수</div></td><td><b>일반 사용자 계정</b><div class="sub">Windows · 관리자 계정으로 드라이버 설치 → 일반(표준) 계정으로 로그인해 인쇄</div></td><td>USB</td><td>일반 계정에서도 인쇄<div class="sub">왜: 업데이트 후 일반 계정이 드라이버를 못 쓰게 된 사례 (POS 는 보통 일반 계정)</div></td><td class="sub">일반(표준) 사용자 계정으로 로그인해 이 프로그램을 실행하고 USB 로 [실행].</td></tr>
+<tr><td class="id">U07<div class="sub">권장</div></td><td><b>USB 절전 후 인쇄</b><div class="sub">Windows · PC 절전(또는 USB 선택적 절전) 후 깨어나서 인쇄</div></td><td>USB</td><td>인쇄 성공 (실패 시 전원 관리 설정 안내)<div class="sub">왜: 점심시간 절전 후 인쇄 불가</div></td><td class="sub">PC 를 절전시켰다 깨운 뒤(또는 30분 대기) 인쇄합니다.</td></tr>
+<tr><td class="id">U08<div class="sub">필수</div></td><td><b>대용량 이미지</b><div class="sub">데이터 · 대용량 이미지 3회</div></td><td>USB</td><td>끝까지 출력, 누락 없음<div class="sub">왜: USB 버퍼·흐름 제어</div></td><td class="sub">3장 모두 끝까지 나와야 합니다.</td></tr>
+<tr><td class="id">U09<div class="sub">필수</div></td><td><b>연속 인쇄 누락</b><div class="sub">데이터 · 영수증 50장 연속 (순번)</div></td><td>USB</td><td>누락·중복 0건<div class="sub">왜: 주문 유실</div></td><td class="sub">50장 순번이 빠짐·중복 없이 이어져야 합니다.</td></tr>
+<tr><td class="id">U10<div class="sub">필수</div></td><td><b>상태 조회</b><div class="sub">데이터 · DLE EOT 1~4</div></td><td>USB</td><td>올바른 응답<div class="sub">왜: POS 가 용지 없음을 알 수 있는지</div></td><td class="sub">가상 COM 으로 연결된 경우에만 응답합니다. Windows 프린터(스풀러) 방식이면 N/A.</td></tr>
+<tr><td class="id">U11<div class="sub">필수</div></td><td><b>인쇄 중 USB 분리</b><div class="sub">이상 상황 · 긴 인쇄 중 USB 케이블 분리 → 다시 꽂고 인쇄</div></td><td>USB</td><td>프린터·PC 프로그램 멈춤 없음, 다음 인쇄 정상<div class="sub">왜: 케이블 건드림</div></td><td class="sub">긴 인쇄가 시작되면 USB 케이블을 뽑았다가 다시 꽂으세요.</td></tr>
+<tr><td class="id">U12<div class="sub">필수</div></td><td><b>프린터 전원 OFF/ON 재인식</b><div class="sub">이상 상황 · 프린터 전원 껐다 켜기 5회</div></td><td>USB</td><td>매번 재인식, 재설치 없음<div class="sub">왜: 매일 전원 껐다 켜는 매장</div></td><td class="sub">프린터 전원을 껐다 켜기 5회. 매번 확인 영수증이 나와야 합니다.</td></tr>
+<tr><td class="id">U13<div class="sub">권장</div></td><td><b>USB 허브 경유</b><div class="sub">이상 상황 · 전원 없는 USB 허브를 거쳐 대용량 이미지</div></td><td>USB</td><td>정상 (안 되면 &#x27;허브 사용 금지&#x27; 안내)<div class="sub">왜: 포트 부족한 POS 에서 허브 사용</div></td><td class="sub">USB 허브를 거쳐 연결한 뒤 [실행].</td></tr>
+<tr><td class="id">U14<div class="sub">선택</div></td><td><b>USB 케이블 길이</b><div class="sub">이상 상황 · 1.8m / 3m / 5m 케이블로 대용량 이미지</div></td><td>USB</td><td>사양 길이에서 정상<div class="sub">왜: 주방까지 긴 배선</div></td><td class="sub">케이블 길이마다 [실행].</td></tr>
+<tr><td class="id">U15<div class="sub">필수</div></td><td><b>USB 에이징</b><div class="sub">장시간 · USB 연속 인쇄 8시간 이상</div></td><td>USB</td><td>끊김·누락 0건<div class="sub">왜: 장시간 안정성</div></td><td class="sub">에이징 탭에서 USB 를 골라 8시간 이상 실행하세요.</td></tr>
+<tr class="cat"><td colspan="5">4. 블루투스</td></tr>
 <tr><td class="id">BT01<div class="sub">필수</div></td><td><b>장치 검색</b><div class="sub">검색·페어링 · PC·안드로이드에서 검색</div></td><td>BT</td><td>이름 표시 (기록)<div class="sub">왜: 검색 안 되면 설치 불가</div></td><td class="sub">PC 에서 검색·페어링한 뒤 [실행]하면 COM 포트 목록이 나옵니다.</td></tr>
 <tr><td class="id">BT02<div class="sub">필수</div></td><td><b>PIN 페어링</b><div class="sub">검색·페어링 · PIN 1234 → 안 되면 0000</div></td><td>수동 확인</td><td>성공 (PIN 기록)<div class="sub">왜: 설명서 PIN 오류</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT03<div class="sub">필수</div></td><td><b>COM 포트 확인</b><div class="sub">검색·페어링 · COM 포트 탭에서 &#x27;보내는&#x27; 포트</div></td><td>BT</td><td>1개 생성 (번호 기록)<div class="sub">왜: 들어오는 포트 선택 실수 (10/19 사례)</div></td><td class="sub">목록에서 &#x27;표준 Bluetooth에서 직렬 링크&#x27; 포트를 확인하고, Windows 의 COM 포트 탭에서 &#x27;보내는&#x27; 포트를 고르세요.</td></tr>
@@ -265,6 +284,7 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td class="id">BT07<div class="sub">권장</div></td><td><b>아이폰 검색</b><div class="sub">검색·페어링 · 아이폰 설정에서 검색</div></td><td>수동 확인</td><td>결과 기록 (클래식 전용이면 안 보임)<div class="sub">왜: 아이폰 지원 문의 대응</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT08<div class="sub">선택</div></td><td><b>이름·PIN 변경 유지</b><div class="sub">검색·페어링 · 이름·PIN 변경 → 전원 껐다 켜기 (도구 있을 때)</div></td><td>수동 확인</td><td>변경 유지<div class="sub">왜: 여러 대 구별·보안</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT09<div class="sub">필수</div></td><td><b>여러 대 구별</b><div class="sub">검색·페어링 · 3대 동시에 켜고 검색</div></td><td>수동 확인</td><td>이름이나 MAC 으로 구별 가능, 라벨에 MAC 표기<div class="sub">왜: 엉뚱한 프린터로 출력</div></td><td class="sub"></td></tr>
+<tr><td class="id">BT44<div class="sub">필수</div></td><td><b>셀프 테스트에 BT 정보</b><div class="sub">검색·페어링 · FEED 누른 채 전원 ON → 셀프 테스트 출력 확인</div></td><td>수동 확인</td><td>BT 이름·MAC·PIN·모듈 펌웨어 출력 (안 나오면 모듈-보드 접촉 불량 의심)<div class="sub">왜: 현장 AS 가 가장 먼저 보는 항목, 매장 여러 대 구별</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT10<div class="sub">필수</div></td><td><b>아무 기기나 페어링</b><div class="sub">보안 · 등록 안 된 폰으로 PIN 1234 페어링 시도</div></td><td>수동 확인</td><td>결과 기록 → 보안 정책 판단<div class="sub">왜: 손님 폰에서 장난 인쇄</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT11<div class="sub">권장</div></td><td><b>연결 중 검색 노출</b><div class="sub">보안 · PC 연결 중 다른 폰에서 검색</div></td><td>수동 확인</td><td>노출 여부 기록<div class="sub">왜: 연결 가로채기·혼선</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT12<div class="sub">필수</div></td><td><b>프린터 재부팅 후 재연결</b><div class="sub">연결·재연결 · OFF→ON 후 바로 인쇄 10회</div></td><td>BT</td><td>재페어링 없이 10/10, 시간 기록<div class="sub">왜: 매일 아침 재연결 불편</div></td><td class="sub">프린터 전원을 껐다 켜기 10회. 재페어링 없이 매번 확인 영수증이 나와야 합니다.</td></tr>
@@ -273,6 +293,7 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td class="id">BT15<div class="sub">필수</div></td><td><b>PC 재부팅 후 자동 연결</b><div class="sub">연결·재연결 · PC 재부팅 → 프로그램 실행 → 인쇄</div></td><td>BT</td><td>추가 조작 없이 인쇄<div class="sub">왜: 매일 PC 부팅</div></td><td class="sub">PC 를 재부팅하고 프로그램을 실행한 뒤 다른 조작 없이 [실행].</td></tr>
 <tr><td class="id">BT16<div class="sub">필수</div></td><td><b>동시 접속 시도</b><div class="sub">연결·재연결 · PC 연결 중 폰 접속 시도</div></td><td>수동 확인</td><td>사양대로, 프린터 멈춤 없음<div class="sub">왜: 두 POS 경쟁</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT17<div class="sub">필수</div></td><td><b>장시간 유휴 후 인쇄</b><div class="sub">연결·재연결 · 연결 후 2시간 방치 → 인쇄</div></td><td>BT</td><td>즉시 출력<div class="sub">왜: 유휴 절전으로 첫 영수증 유실</div></td><td class="sub">연결한 채 2시간(입력 가능) 기다렸다가 인쇄합니다.</td></tr>
+<tr><td class="id">BT45<div class="sub">필수</div></td><td><b>휴대폰 절전 모드에서 인쇄</b><div class="sub">연결·재연결 · 안드로이드 배터리 절약·앱 최적화 켠 채 화면 끄고 10분 → 앱으로 인쇄</div></td><td>수동 확인</td><td>인쇄 성공 (실패 시 필요한 앱 설정을 설명서에 기록)<div class="sub">왜: 배터리 절약이 POS 앱·블루투스를 끊어 주문 출력 누락</div></td><td class="sub">안드로이드에서 배터리 절약·앱 최적화를 켠 채 화면을 끄고 10분 뒤 POS(또는 시리얼) 앱으로 인쇄하세요. 안 되면 필요한 설정(배터리 최적화 제외 등)을 비고에 적으세요.</td></tr>
 <tr><td class="id">BT18<div class="sub">권장</div></td><td><b>끊김 감지 시간</b><div class="sub">연결·재연결 · 프린터 OFF 후 PC 가 오류를 내기까지</div></td><td>BT</td><td>시간 기록<div class="sub">왜: POS 가 끊김을 늦게 앎</div></td><td class="sub">[실행] 후 프린터 전원을 끄세요. 프로그램이 끊김을 알아챌 때까지 걸린 시간을 비고에 적으세요.</td></tr>
 <tr><td class="id">BT19<div class="sub">권장</div></td><td><b>연결 24시간 유지</b><div class="sub">연결·재연결 · 인쇄 없이 연결만 24시간 → 인쇄</div></td><td>BT</td><td>정상 출력<div class="sub">왜: 밤새 켜 둔 매장</div></td><td class="sub">인쇄 없이 24시간 연결만 유지한 뒤 인쇄합니다.</td></tr>
 <tr><td class="id">BT20<div class="sub">필수</div></td><td><b>기본 출력</b><div class="sub">데이터 · 연결 확인·영수증·한글·바코드·QR</div></td><td>BT</td><td>모두 정상<div class="sub">왜: 기본 기능</div></td><td class="sub">연결 → 정보 → 상태 → 확인 영수증을 한 번에 합니다. 이어서 한글·바코드·QR 도 [패턴 인쇄] 탭에서 확인하세요.</td></tr>
@@ -299,7 +320,7 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td class="id">BT41<div class="sub">권장</div></td><td><b>호스트 호환성</b><div class="sub">호환성 · Win10 POS / Win11 / 안드로이드 2종</div></td><td>수동 확인</td><td>모두 정상<div class="sub">왜: 고객 환경 다양</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT42<div class="sub">권장</div></td><td><b>동글 호환성</b><div class="sub">호환성 · 검증 동글 정상 확인, A·B 동글 결과 기록</div></td><td>수동 확인</td><td>부적합 동글 목록<div class="sub">왜: 동글 문제를 프린터 불량으로 오판</div></td><td class="sub"></td></tr>
 <tr><td class="id">BT43<div class="sub">권장</div></td><td><b>Windows 업데이트·재부팅 후 COM 번호</b><div class="sub">호환성 · 재부팅 3회, 업데이트 후 COM 번호 확인</div></td><td>수동 확인</td><td>번호 유지 (바뀌면 기록)<div class="sub">왜: 아침에 갑자기 인쇄 불가</div></td><td class="sub"></td></tr>
-<tr class="cat"><td colspan="5">4. 환경·안전·기타</td></tr>
+<tr class="cat"><td colspan="5">5. 환경·안전·기타</td></tr>
 <tr><td class="id">E01<div class="sub">선택</div></td><td><b>저온 동작</b><div class="sub">환경 · 0~5°C 에서 1시간 후 인쇄</div></td><td>체크한 통신마다 각각</td><td>인쇄·컷 정상, 농도 기록<div class="sub">왜: 겨울 야외 매장·포장마차</div></td><td class="sub">0~5°C 에서 1시간 둔 뒤 [실행]. 농도를 상온 출력물과 비교하세요.</td></tr>
 <tr><td class="id">E02<div class="sub">선택</div></td><td><b>고온 동작</b><div class="sub">환경 · 40°C 에서 연속 인쇄</div></td><td>체크한 통신마다 각각</td><td>과열 보호 외 정상<div class="sub">왜: 여름 주방</div></td><td class="sub">40°C 에서 [실행]. 과열 보호 외 이상이 없어야 합니다.</td></tr>
 <tr><td class="id">E03<div class="sub">선택</div></td><td><b>결로</b><div class="sub">환경 · 차가운 곳에 두었다가 실내로 옮겨 바로 사용</div></td><td>체크한 통신마다 각각</td><td>오동작 없음 (권장 대기 시간 기록)<div class="sub">왜: 겨울 배송 직후 설치</div></td><td class="sub">차가운 곳에 두었다가 실내로 옮겨 바로 [실행].</td></tr>

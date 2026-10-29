@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""시험 계획표 엑셀 만들기 — testcases.py 의 145항목에서 생성 (프로그램과 계획표가 항상 같은 목록).
+"""시험 계획표 엑셀 만들기 — testcases.py 의 항목에서 생성 (프로그램과 계획표가 항상 같은 목록).
 
 실행: python make_plan.py [출력파일]   (기본 TestPlan.xlsx)
 """
@@ -123,6 +123,8 @@ for i, t in enumerate([
     "• RS232 는 프린터 → PC 응답이 없는 단방향 결선일 수 있음 → 상태 조회 무응답은 결선으로 기록 (S11).",
     "• 블루투스 모듈: 사양 미확보, HC-05 유사(클래식 SPP, Class 2, 목표 거리 약 10m)로 가정.",
     "• 블루투스 PC 쪽은 검증 동글(Realtek 칩, 예: TP-Link UB500) 사용. A·B 동글은 부적합 확인됨.",
+    "• USB 는 가상 COM(드라이버) 또는 Windows 프린터(스풀러) 방식. 스풀러 방식은 상태 조회(U10)가 N/A.",
+    "• 10/29 사용자 불편·AS 조사로 추가: USB 파트(U01~U15), F57 친환경 감열지, F58 커터 청소, F59 수명 사양, BT44 셀프테스트 BT 정보, BT45 폰 절전.",
     "• 블루투스에서 '텍스트 서식' 인쇄 후 먹통 결함(DEF-BT-01) → 텍스트 서식 품질 시험(F34)은 RS232 로 진행.",
     "• 도구: PrinterTestPOS.exe (RS232/USB/BT 간편 출력), PrinterTester.exe (TC·에이징·진단·교차 시험).",
     "• 도구 표기: 'POS화면' = PrinterTestPOS.exe, 'Tester' = PrinterTester.exe ('[실행]' 표시 = Tester 의 2. 테스트 케이스 탭에서 같은 ID 를 골라 ▶ 실행 가능, 결과는 [계획표 엑셀에 결과 반영] 으로 이 파일에 채워짐), '명령 전송' = Tester 의 명령 탭.",

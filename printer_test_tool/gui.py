@@ -36,7 +36,7 @@ FLOWS = ("없음", "RTS/CTS", "DTR/DSR", "XON/XOFF")
 IFACE_DEFAULTS = {"RS232": {"baud": "9600", "flow": "없음"}, "USB": {"baud": "9600", "flow": "없음"},
                   "BT": {"baud": "9600", "flow": "없음"}}
 MAX_PRINTERS = 9
-AGING_TC = {"RS232": "S31", "BT": "BT40"}   # 에이징 결과를 기록할 테스트 케이스 (그 외 F55)
+AGING_TC = {"RS232": "S31", "USB": "U15", "BT": "BT40"}   # 에이징 결과를 기록할 테스트 케이스 (그 외 F55)
 
 
 def resource_path(name):
@@ -1141,7 +1141,7 @@ class App(tk.Tk):
                     st = t.runner.stats[t.targets[0]]
                     lines.append(f"{t.targets[0]}: 전송 {st['sent']} / 정상 {st['ok']} / 실패 {st['fail']}")
             messagebox.showinfo(APP_TITLE, "진행 중인 에이징이 모두 끝났습니다.\n\n" + "\n".join(lines[-12:]) +
-                                "\n\n자세한 내용은 테스트 케이스 S31(RS232)·BT40(BT)·F55(그 외) 비고와 logs 폴더 CSV 를 확인하세요.")
+                                "\n\n자세한 내용은 테스트 케이스 S31(RS232)·U15(USB)·BT40(BT)·F55(그 외) 비고와 logs 폴더 CSV 를 확인하세요.")
 
     # ================================================================ 4. 패턴 인쇄 / 명령
     def _build_manual(self, nb):
