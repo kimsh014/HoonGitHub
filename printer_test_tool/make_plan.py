@@ -328,5 +328,4 @@ for sh in wb.worksheets:
 wb.active = 1
 wb.calculation.fullCalcOnLoad = True
 wb.save(OUT)
-from collections import Counter  # noqa: E402
-print("saved", OUT, "items", n, dict(Counter(it[0] for it in ITEMS)), dict(Counter(it[8] for it in ITEMS)))
+print("TestPlan saved: %d items (required %d)" % (n, sum(it[8] == "필수" for it in ITEMS)))  # ASCII only (Windows CI console)
