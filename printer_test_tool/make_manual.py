@@ -21,15 +21,17 @@ def e(s):
 
 
 def tc_rows():
-    rows, cat = [], None
+    rows, part = [], None
     for t in TC:
-        if t["cat"] != cat:
-            cat = t["cat"]
-            rows.append(f'<tr class="cat"><td colspan="5">{e(cat)}</td></tr>')
+        if t["part"] != part:
+            part = t["part"]
+            rows.append(f'<tr class="cat"><td colspan="5">{e(part)}</td></tr>')
         run = "수동 확인" if t["action"] is None else HOW[t["channel"]]
         rows.append(
-            f'<tr><td class="id">{e(t["id"])}</td><td><b>{e(t["name"])}</b><div class="sub">{e(t["method"])}</div></td>'
-            f'<td>{e(run)}</td><td>{e(t["criterion"])}</td><td class="sub">{e(t["guide"])}</td></tr>')
+            f'<tr><td class="id">{e(t["id"])}<div class="sub">{e(t["prio"])}</div></td>'
+            f'<td><b>{e(t["name"])}</b><div class="sub">{e(t["cat"])} · {e(t["method"])}</div></td>'
+            f'<td>{e(run)}</td><td>{e(t["criterion"])}<div class="sub">왜: {e(t["why"])}</div></td>'
+            f'<td class="sub">{e(t["guide"])}</td></tr>')
     return "\n".join(rows)
 
 
@@ -161,7 +163,7 @@ td.id{white-space:nowrap;font-weight:700}
 <li>연결이 끊기면 자동 재연결을 시도합니다 (자동 재연결 옵션).</li>
 <li>영수증마다 <b>순번</b>이 찍힙니다. 아침에 순번이 빠진 곳이 없는지 보세요.</li>
 <li>로그 CSV: <code>logs\날짜_aging_기본_프린터명_통신.csv</code> — 결과 열이 FAIL / ERROR / NORESP 인 행이 문제 기록입니다. 에이징 중에 엑셀로 열어 봐도 됩니다.</li>
-<li>끝나면 요약이 해당 프린터의 <b>X04</b> 비고에 자동 기록됩니다.</li>
+<li>끝나면 요약이 해당 프린터의 <b>S31</b>(RS232)·<b>BT40</b>(BT)·<b>F55</b>(그 외) 비고에 자동 기록됩니다.</li>
 </ul>
 
 <h2 id="s6">6. 작업 현황과 중지</h2>
@@ -195,15 +197,14 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td>농도</td><td>0~100% 막대 단계 구분. 프린터 농도 설정을 바꿔 반복 비교</td></tr>
 <tr><td>1D 바코드 / QR 코드</td><td>스캐너·스마트폰으로 모두 읽히면 Pass</td></tr>
 <tr><td>대용량 이미지</td><td>맨 끝 <code>END #n</code> 줄이 보이면 데이터 누락 없음</td></tr>
-<tr><td>동시 인쇄 (X02)</td><td>모든 줄에 <code>[프린터 통신]</code> 표시 — 한 영수증 안에 다른 이름이 섞이면 Fail</td></tr>
+<tr><td>동시 인쇄 (S29·S30)</td><td>모든 줄에 <code>[프린터 통신]</code> 표시 — 한 영수증 안에 다른 이름이 섞이면 Fail</td></tr>
 </table>
 <p class="sub">사용 가능한 패턴: {{PATTERNS}}</p>
 
 <h2 id="s8">8. 결과 정리</h2>
 <ul>
-<li><span class="btn">계획표 엑셀에 결과 반영</span> — 검증 계획표(.xlsx)를 고르면 <b>프린터마다 새 파일</b>(<code>계획표_결과_샘플A_…xlsx</code>)을 만들어 결과·시험자·시험일·FW·결함ID·비고를 채웁니다. 원본은 그대로.</li>
-<li><span class="btn">CSV 내보내기</span> — 모든 프린터의 결과를 한 파일로 (<code>results</code> 폴더).</li>
-<li>E로 시작하는 추가 시험은 계획표에 없으므로 CSV 에만 나옵니다.</li>
+<li><span class="btn">계획표 엑셀에 결과 반영</span> — 시험 계획표(<code>TestPlan.xlsx</code>, exe 와 함께 제공)를 고르면 <b>프린터마다 새 파일</b>(<code>TestPlan_결과_샘플A_…xlsx</code>)을 만들어 완료 ✔·결과·시험자·시험일·결함ID·메모를 채웁니다. 원본은 그대로.</li>
+<li>계획표와 프로그램은 같은 145개 항목(ID 같음)을 씁니다. 계획표의 요약 시트(진행률·파트별·우선순위별)는 엑셀에서 열면 자동 계산됩니다.</li>
 </ul>
 
 <h2 id="s9">9. 테스트 케이스 전체 목록 ({{N_TC}}개)</h2>
@@ -218,7 +219,7 @@ td.id{white-space:nowrap;font-weight:700}
 <tr><td><b>연결은 되는데 인쇄가 안 나옴 / 전원 ON·OFF 를 인식 못 함</b></td>
 <td>속도·흐름제어가 프린터와 다를 때 생깁니다 (흐름제어가 맞지 않으면 데이터가 한 바이트도 나가지 않음). 해당 줄의 <span class="btn">진단</span> 을 누르세요. 프린터 셀프테스트 인쇄물(FEED 버튼 누른 채 전원 ON)에 적힌 속도·흐름제어와 같게 맞춰도 됩니다. 로그에 "전송 시간 초과 … CTS=off" 가 보이면 흐름제어를 '없음'으로.</td></tr>
 <tr><td><b>진단 결과 한 줄만 깨끗하게 나오고 "상태 응답 없음"</b> (단방향)</td>
-<td>PC→프린터 전송은 되지만 프린터→PC 응답이 없는 상태입니다. 깨끗한 줄의 속도를 입력하면 그 속도·흐름제어 없음으로 연결됩니다. 이 상태에서도 인쇄 시험·에이징은 됩니다 (에이징은 상태 조회를 생략하고 인쇄만으로 진행, 순번으로 누락 확인). 전원 ON/OFF·케이블 분리 시험은 <b>수동 확인 모드</b>로 진행됩니다 (매 회 "껐다 켰나요?" → "영수증 나왔나요?"). 응답이 없는 원인(케이블 RX 결선, 프린터의 실시간 명령 설정)은 R05 결함으로 기록해 확인하세요.</td></tr>
+<td>PC→프린터 전송은 되지만 프린터→PC 응답이 없는 상태입니다. 깨끗한 줄의 속도를 입력하면 그 속도·흐름제어 없음으로 연결됩니다. 이 상태에서도 인쇄 시험·에이징은 됩니다 (에이징은 상태 조회를 생략하고 인쇄만으로 진행, 순번으로 누락 확인). 전원 ON/OFF·케이블 분리 시험은 <b>수동 확인 모드</b>로 진행됩니다 (매 회 "껐다 켰나요?" → "영수증 나왔나요?"). 응답이 없는 원인(케이블 RX 결선, 프린터의 실시간 명령 설정)은 S11 결함(DEF-RS-01)으로 기록해 확인하세요.</td></tr>
 <tr><td>진단해도 아무것도 안 나옴</td><td>① 포트 번호가 맞는지(케이블 뽑고 새로고침해 사라지는 COM) ② RJ45-DB9 케이블 결선(프린터 전용 케이블인지) ③ 프린터 인터페이스 설정(시리얼이 켜져 있는지) ④ 다른 POS 프로그램이 같은 COM 을 잡고 있지 않은지 확인.</td></tr>
 <tr><td>포트 목록에 COM 이 안 보임</td><td>케이블·전원 확인 → <span class="btn">포트 목록 새로고침</span>. USB-시리얼 변환기는 드라이버(FTDI/Prolific/CH340) 설치. BT 는 Windows 설정에서 먼저 페어링.</td></tr>
 <tr><td>연결 실패 "Access is denied / 액세스 거부"</td><td>다른 프로그램(터미널, 드라이버 유틸)이 그 COM 을 쓰고 있음 → 닫고 다시 연결. 이 프로그램 안의 다른 프린터 줄이 같은 포트를 쓰는지도 확인.</td></tr>

@@ -283,5 +283,104 @@ class PosSettingsTest(unittest.TestCase):
         self.assertEqual((f.stats["cuts"], f.stats["errors"]), (1, []))
 
 
+class PlanTest(unittest.TestCase):
+    """145항목 계획표 ↔ 프로그램 연결."""
+
+    def test_testcases_consistent(self):
+        import testcases
+        ids = [t["id"] for t in testcases.TC]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertGreaterEqual(len(ids), 145)
+        known = {"print", "burst", "burst_pat", "reconnect", "status", "monitor", "cut", "drawer", "drawer_print",
+                 "comm", "mismatch", "speed", "devices", "x01", "x02", "x03", "aging", "info", "quick", "idle",
+                 "rapid_cut", "busy_send", "status_during", "rate", "half_cmd", "isolate"}
+        for t in testcases.TC:
+            self.assertIn(t["prio"], ("필수", "권장", "선택"), t["id"])
+            self.assertIn(t["channel"], ("RS232", "USB", "BT", "ANY", "ALL"), t["id"])
+            a = t["action"]
+            if a is None:
+                continue
+            self.assertIn(a[0], known, t["id"])
+            if a[0] in ("print", "burst_pat"):
+                self.assertIn(a[1], {**patterns.PATTERNS, **patterns.SPECIAL}, t["id"])
+            if a[0] == "burst":
+                self.assertIn(a[1], patterns.AGING_PATTERNS, t["id"])
+
+    def test_gui_handles_every_action(self):
+        """gui.py 실행 분기에 모든 action 종류가 있어야 한다 (버튼을 눌렀는데 아무 일 없는 항목 방지)."""
+        import testcases
+        with open(os.path.join(os.path.dirname(HERE), "gui.py"), encoding="utf-8") as f:
+            src = f.read()
+        for kind in {t["action"][0] for t in testcases.TC if t["action"]}:
+            self.assertIn(f'kind == "{kind}"', src, kind)
+
+    def test_export_into_plan(self):
+        import subprocess
+        import results
+        from openpyxl import load_workbook
+        d = tempfile.mkdtemp()
+        plan = os.path.join(d, "plan.xlsx")
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(HERE), "make_plan.py"), plan], check=True,
+                       capture_output=True)
+        res = results.Results(os.path.join(d, "r.json"))
+        res.set("샘플A", "F01", result="Pass", tester="홍길동", note="20/20")
+        res.set("샘플A", "BT27", result="Fail", defect="DEF-BT-01", note="굵게에서 멈춤")
+        out, n = res.export_xlsx(plan, "샘플A")
+        self.assertEqual(n, 2)
+        ws = load_workbook(out)["체크리스트"]
+        hrow, cols = results.find_columns(ws)
+        rows = {ws.cell(r, cols["id"]).value: r for r in range(hrow + 1, ws.max_row + 1)}
+        g = lambda tid, key: ws.cell(rows[tid], cols[key]).value
+        self.assertEqual((g("F01", "result"), g("F01", "done"), g("F01", "tester")), ("Pass", "✔", "홍길동"))
+        self.assertEqual((g("BT27", "result"), g("BT27", "defect")), ("Fail", "DEF-BT-01"))
+        self.assertIsNone(g("F02", "result"))
+
+
+class NewActionsTest(unittest.TestCase):
+    def setUp(self):
+        self.s = engine.Session(log=lambda m: None)
+        self.cancel = threading.Event()
+        self.f = Fake()
+        connect(self.s, "RS232", self.f)
+
+    def tearDown(self):
+        self.s.close_all()
+
+    def test_special_patterns_do_not_break_stream(self):
+        for name in patterns.SPECIAL:
+            engine.act_print(self.s, "RS232", name, self.cancel)
+        time.sleep(0.5)
+        self.assertEqual(self.f.stats["cuts"], len(patterns.SPECIAL))
+        self.assertTrue(any("쓰레기 데이터 후 복구" in t for t in self.f.stats["text"]))
+
+    def test_rapid_cut_idle_drawer_rate_half(self):
+        engine.act_rapid_cut(self.s, "RS232", 5, 0.05, self.cancel)
+        engine.act_idle_print(self.s, "RS232", 0, self.cancel)
+        engine.act_drawer_print(self.s, "RS232", self.cancel)
+        r = engine.act_transfer_rate(self.s, "RS232", 1, self.cancel)
+        self.assertIn("KB/s", r["summary"])
+        engine.act_half_command(self.s, "RS232", self.cancel, wait_s=0)
+        time.sleep(0.5)
+        self.assertGreaterEqual(self.f.stats["cuts"], 5 + 1 + 1 + 1)
+
+    def test_status_during_and_busy_send(self):
+        r = engine.act_status_during(self.s, "RS232", self.cancel)
+        self.assertIn("응답", r["summary"])
+        asked = []
+        r = engine.act_busy_send(self.s, "RS232", 3, self.cancel, lambda m: asked.append(m) or True)
+        self.assertEqual(len(asked), 2)
+        self.assertIn("3장 중 3장 전송", r["summary"])
+
+    def test_isolate_commands(self):
+        r = engine.act_isolate_commands(self.s, "RS232", self.cancel, lambda m: True)
+        self.assertEqual(r["suggest"], "PASS")
+        answers = iter([True, True, False])
+        r = engine.act_isolate_commands(self.s, "RS232", self.cancel, lambda m: next(answers))
+        self.assertEqual(r["suggest"], "FAIL")
+        self.assertIn(engine.FORMAT_COMMANDS[2][0], r["summary"])
+        time.sleep(0.5)
+        self.assertEqual(self.f.stats["errors"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

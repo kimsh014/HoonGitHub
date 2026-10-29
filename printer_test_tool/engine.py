@@ -184,7 +184,7 @@ def send(session, label, data, what="", csvlog=None, seq="", check_status=False,
 
 
 def act_print(session, label, pattern_name, cancel=None, **kw):
-    fn = patterns.PATTERNS[pattern_name]
+    fn = patterns.PATTERNS.get(pattern_name) or patterns.SPECIAL[pattern_name]
     data = fn(session.opts, channel=label, **kw)
     r = send(session, label, data, pattern_name, check_status=True, cancel=cancel)
     return {"suggest": "FAIL" if r["code"] == "ERROR" else None,
@@ -630,6 +630,165 @@ def act_quick_check(session, label, cancel=None):
 
 
 # ---------------- 에이징 ----------------
+
+# ---------------- 계획표 확장 시험 (기능·시리얼·블루투스 145항목) ----------------
+
+def _wait(cancel, seconds, what):
+    """seconds 동안 기다리며 남은 시간 보고. 중지되면 False."""
+    end = time.time() + seconds
+    while time.time() < end:
+        if cancel is not None and cancel.is_set():
+            return False
+        left = int(end - time.time())
+        report(cancel, f"{what} — 남은 시간 {left // 60}분 {left % 60:02d}초", seconds - left, seconds)
+        time.sleep(min(1.0, max(0.0, end - time.time())))
+    return True
+
+
+def act_idle_print(session, label, minutes, cancel):
+    """F06/S27/BT17/BT19 — 연결을 열어 둔 채 기다렸다가 영수증 1장. 첫 인쇄가 바로 나오는지 본다."""
+    session.get(label)
+    if not _wait(cancel, minutes * 60, f"{minutes}분 대기 후 인쇄"):
+        return {"suggest": None, "summary": "중지됨"}
+    t0 = time.perf_counter()
+    r = send(session, label, patterns.pattern_receipt(session.opts, label, 1), f"{minutes}분 대기 후 영수증",
+             check_status=True, cancel=cancel)
+    secs = time.perf_counter() - t0
+    return {"suggest": "FAIL" if r["code"] == "ERROR" else None,
+            "summary": f"{minutes}분 대기 후 인쇄 — 전송 {secs:.1f}초. 영수증이 바로(2초 안) 나왔는지, 첫 장이 빠지지 않았는지 확인. {r['text']}"}
+
+
+def act_rapid_cut(session, label, count, interval, cancel):
+    """F22 빠른 연속 컷 — 짧은 영수증을 interval 초 간격으로 count 장."""
+    for i in range(1, count + 1):
+        if cancel.is_set():
+            return {"suggest": None, "summary": f"중지됨 ({i - 1}/{count})"}
+        report(cancel, f"연속 컷 {i}/{count}", i - 1, count)
+        session.get(label).write(patterns.pattern_short(session.opts, label, i), cancel)
+        time.sleep(interval)
+    text, code = status_summary(read_status(session.get(label)))
+    return {"suggest": "FAIL" if code == "ERROR" else None,
+            "summary": f"{interval}초 간격 컷 {count}회. 상태: {text}. 걸림·잘린 조각 끼임·누락 번호 확인"}
+
+
+def act_drawer_print(session, label, cancel=None):
+    """F33 드로어 열기와 영수증 인쇄를 한 번에 — 솔레노이드 전류로 프린터가 리셋되지 않는지."""
+    data = Receipt().init().drawer(0).bytes() + patterns.pattern_receipt(session.opts, label, 1)
+    r = send(session, label, data, "드로어+영수증", check_status=True, cancel=cancel)
+    return {"suggest": "FAIL" if r["code"] == "ERROR" else None,
+            "summary": f"드로어 열기 + 영수증 동시 전송. 드로어 열림·영수증 정상·재부팅 없음 확인. {r['text']}"}
+
+
+def act_busy_send(session, label, count, cancel, confirm):
+    """S10/BT25 프린터가 BUSY(용지 없음) 일 때 계속 보내기 → 보충 후 몇 장이 나오는지."""
+    if not confirm("용지를 빼고(또는 커버를 열어) 프린터를 '용지 없음' 상태로 만든 뒤 [확인]을 누르세요."):
+        return {"suggest": None, "summary": "취소됨"}
+    sent = errs = 0
+    for i in range(1, count + 1):
+        if cancel.is_set():
+            break
+        report(cancel, f"용지 없음 상태에서 {i}/{count}장 전송", i - 1, count)
+        try:
+            session.get(label).write(patterns.pattern_receipt(session.opts, f"{label} BUSY", i), cancel)
+            sent += 1
+        except TransportError as e:
+            errs += 1
+            session.log(f"[{label}] BUSY 중 #{i} 전송 실패: {e}")
+    confirm("이제 용지를 넣고(커버를 닫고) [확인]을 누르세요. 남은 영수증이 나오는지 지켜보세요.")
+    time.sleep(3)
+    text, _ = status_summary(read_status(session.get(label)))
+    return {"suggest": None,
+            "summary": f"BUSY 중 {count}장 중 {sent}장 전송, 전송 실패 {errs}. 보충 후 나온 순번(1~{count})을 확인해 유실 장수를 비고에 적으세요. 상태: {text}"}
+
+
+def act_status_during(session, label, cancel):
+    """S12 긴 인쇄 중 실시간 상태 조회가 응답하는지."""
+    tr = session.get(label)
+    data = long_print_data(session, label, 3)
+    th = threading.Thread(target=_safe_write, args=(session, label, data), daemon=True)
+    th.start()
+    ok = tries = 0
+    while th.is_alive() and not cancel.is_set() and tries < 30:
+        time.sleep(1.0)
+        tries += 1
+        report(cancel, f"인쇄 중 상태 조회 {tries}회 (응답 {ok})")
+        if read_status(tr, timeout=0.8, urgent=True):
+            ok += 1
+    th.join(60)
+    if tries == 0:
+        return {"suggest": None, "summary": "인쇄가 너무 빨리 끝나 조회하지 못함 — 다시 실행"}
+    return {"suggest": "PASS" if ok == tries else ("FAIL" if ok == 0 else None),
+            "summary": f"인쇄 중 상태 조회 {tries}회 중 {ok}회 응답"}
+
+
+def act_transfer_rate(session, label, count, cancel):
+    """BT24 전송 속도 — 대용량 이미지를 count 번 보내 평균 KB/s."""
+    total_b = total_s = 0.0
+    for i in range(1, count + 1):
+        if cancel.is_set():
+            break
+        report(cancel, f"대용량 이미지 {i}/{count}", i - 1, count)
+        data = patterns.pattern_large_image(session.opts, label, seq=i)
+        total_s += session.get(label).write(data, cancel)
+        total_b += len(data)
+    rate = total_b / total_s / 1024 if total_s else 0
+    return {"suggest": None,
+            "summary": f"전송 {total_b / 1024:.0f}KB / {total_s:.1f}초 = 평균 {rate:.1f}KB/s. 이미지가 끊김 없이 나왔는지 확인"}
+
+
+def act_half_command(session, label, cancel, wait_s=10):
+    """F50 이미지 명령을 반만 보내고 기다린 뒤 영수증 — 프린터가 멈추지 않는지(복구 방법) 기록."""
+    data = patterns.pattern_large_image(session.opts, label)
+    start = data.find(b"\x1dv0")
+    cut = start + 8 + 72 * 12 if start >= 0 else len(data) // 2   # 첫 이미지 띠의 절반쯤에서 끊음
+    session.get(label).write(data[:cut], cancel)
+    if not _wait(cancel, wait_s, "명령 중간 끊김 — 대기"):
+        return {"suggest": None, "summary": "중지됨"}
+    r = send(session, label, patterns.pattern_receipt(session.opts, label, 1), "끊김 후 영수증", check_status=True, cancel=cancel)
+    return {"suggest": None,
+            "summary": f"이미지 명령을 중간에 끊고 {wait_s}초 뒤 영수증 전송. 영수증이 (일부 깨져도) 나오는지, 멈췄다면 복구 방법을 기록. {r['text']}"}
+
+
+# BT27 원인 명령 분리 — 텍스트 서식 명령을 하나씩 보낸다
+FORMAT_COMMANDS = [
+    ("굵게 (ESC E)", b"\x1bE\x01", b"\x1bE\x00"),
+    ("밑줄 (ESC -)", b"\x1b-\x01", b"\x1b-\x00"),
+    ("굵은 밑줄 (ESC - 2)", b"\x1b-\x02", b"\x1b-\x00"),
+    ("반전 (GS B)", b"\x1dB\x01", b"\x1dB\x00"),
+    ("배율 2x2 (GS !)", b"\x1d!\x11", b"\x1d!\x00"),
+    ("배율 3x3 (GS !)", b"\x1d!\x22", b"\x1d!\x00"),
+    ("가운데 정렬 (ESC a)", b"\x1ba\x01", b"\x1ba\x00"),
+    ("오른쪽 정렬 (ESC a)", b"\x1ba\x02", b"\x1ba\x00"),
+    ("글꼴 B (ESC M)", b"\x1bM\x01", b"\x1bM\x00"),
+    ("인쇄 모드 (ESC !)", b"\x1b!\x38", b"\x1b!\x00"),
+    ("뒤집기 (ESC {)", b"\x1b{\x01", b"\x1b{\x00"),
+    ("90도 회전 (ESC V)", b"\x1bV\x01", b"\x1bV\x00"),
+]
+
+
+def act_isolate_commands(session, label, cancel, confirm):
+    """BT27 — 서식 명령을 하나씩 보내고, 매번 확인 줄이 나왔는지 묻는다. 처음 '아니오' = 원인 명령."""
+    tr = session.get(label)
+    ok_names = []
+    for k, (name, on, off) in enumerate(FORMAT_COMMANDS, start=1):
+        if cancel.is_set():
+            break
+        report(cancel, f"[{k}/{len(FORMAT_COMMANDS)}] {name}", k - 1, len(FORMAT_COMMANDS))
+        data = (on + f"[{k}] {name}\n".encode("cp949") + off
+                + f"    -> [{k}] 확인 줄 (보통 글씨)\n".encode("cp949"))
+        try:
+            tr.write(data, cancel)
+        except TransportError as e:
+            return {"suggest": "FAIL", "summary": f"'{name}' 전송 중 오류: {e}. 그 전까지 정상: {', '.join(ok_names) or '없음'}"}
+        time.sleep(1.0)
+        if not confirm(f"[{k}] {name}\n\n'-> [{k}] 확인 줄' 이 인쇄되었나요?\n\n인쇄됨 → [확인]   /   인쇄 안 됨(멈춤) → [취소]"):
+            return {"suggest": "FAIL",
+                    "summary": f"원인 후보: '{name}' 이후 인쇄 안 됨. 그 전까지 정상: {', '.join(ok_names) or '없음'}. 복구 방법(재연결/전원 리셋)을 비고에 기록"}
+        ok_names.append(name.split(" (")[0])
+    tr.write(b"\x1b@", cancel)
+    return {"suggest": "PASS" if len(ok_names) == len(FORMAT_COMMANDS) else None,
+            "summary": f"서식 명령 {len(ok_names)}/{len(FORMAT_COMMANDS)}개 정상 — 하나씩은 멈추지 않음. 텍스트 서식 패턴 전체로 다시 재현해 조합 문제인지 확인"}
+
 
 class AgingRunner:
     """에이징 시험.

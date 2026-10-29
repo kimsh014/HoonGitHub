@@ -234,9 +234,12 @@ def pattern_barcode(opts=None, channel=""):
     r, o = _r(opts)
     _header(r, o, "1D 바코드", channel)
     r.align("center")
-    r.line("CODE128 : TEST-12345").barcode("CODE128", "TEST-12345", height=60)
-    r.line("EAN13 : 880123456789").barcode("EAN13", "880123456789", height=60)
-    r.line("CODE39 : ABC123").barcode("CODE39", "ABC123", height=60)
+    r.line("CODE128 : TEST-12345").barcode("CODE128", "TEST-12345", height=40)
+    r.line("EAN13 : 880123456789").barcode("EAN13", "880123456789", height=40)
+    r.line("CODE39 : ABC123").barcode("CODE39", "ABC123", height=40)
+    r.line("UPC-A : 01234567890").barcode("UPCA", "01234567890", height=40)
+    r.line("ITF : 1234567890").barcode("ITF", "1234567890", height=40)
+    r.line("CODE128 (숫자 위) : 2026").barcode("CODE128", "2026", height=40, hri=1)
     r.align("left")
     return _finish(r, o)
 
@@ -400,6 +403,36 @@ def pattern_cut(opts=None, channel="", seq=0, partial=True):
     return _finish(r, o)
 
 
+def pattern_qr_sizes(opts=None, channel=""):
+    """F40 QR 크기별 + 긴 URL."""
+    r, o = _r(opts)
+    _header(r, o, "QR 크기별", channel)
+    r.align("center")
+    for m in (3, 5):
+        r.line(f"모듈 {m}").qr(f"QR-SIZE-{m}", module=m)
+    r.line("모듈 4 / 긴 URL").qr("https://example.com/receipt?id=20261029-0001&store=TEST&amount=12345&sign=" + "A" * 30, module=4)
+    r.align("left")
+    return _finish(r, o)
+
+
+def pattern_reset_effect(opts=None, channel=""):
+    """F48 초기화(ESC @) 효과 — 서식을 잔뜩 켠 뒤 초기화하면 보통 글씨로 돌아와야 한다."""
+    r, o = _r(opts)
+    _header(r, o, "초기화 효과", channel)
+    r.bold().underline(2).reverse().size(2, 2).line("서식 켜짐").size(1, 1).reverse(False)
+    r.init()                                      # ESC @ — 모든 서식 해제
+    r.line("↑ 위는 굵게/밑줄/반전/2배")
+    r.line("이 줄은 보통 글씨여야 정상입니다")
+    return _finish(r, o)
+
+
+def pattern_short(opts=None, channel="", seq=None):
+    """F19 아주 짧은 영수증 — 한 줄 + 컷 (길이 맞춤 없음)."""
+    r, o = _r(opts)
+    r.line(f"짧은 영수증 #{seq if seq is not None else 1}  {_now()}")
+    return _finish(r, o, fixed_length=False)
+
+
 PATTERNS = {
     "연결 확인": pattern_info,
     "영수증": pattern_receipt,
@@ -417,6 +450,57 @@ PATTERNS = {
     "회전/뒤집기": pattern_rotate,
     "대용량 이미지": pattern_large_image,
     "전면 검정": pattern_heat,
+    "QR 크기별": pattern_qr_sizes,
+    "초기화 효과": pattern_reset_effect,
+    "짧은 영수증": pattern_short,
+}
+
+
+# ---- 일부러 '규격 밖' 데이터를 보내는 시험 (PATTERNS 와 달리 깨진 글자가 찍히는 것이 정상) ----
+
+def special_line_width(opts=None, channel=""):
+    """F35 한 줄 글자 수 — 글꼴 A/B 로 한 줄을 꽉 채우고, 한 글자 넘쳐 줄바꿈되는지 본다."""
+    r, o = _r(opts)
+    _header(r, o, "한 줄 글자 수", channel)
+    for name, b, n in (("글꼴 A", False, o["dots"] // 12), ("글꼴 B", True, o["dots"] // 9)):
+        r.font(b).line(f"{name}: {n}자 기대 (끝이 {n % 10} 이면 정상)")
+        r.line(("1234567890" * 10)[:n])
+        r.line(("1234567890" * 10)[:n] + "X")
+        r.line("위의 X 는 다음 줄로 넘어가야 정상")
+    r.font(False)
+    return _finish(r, o)
+
+
+def special_unsupported(opts=None, channel=""):
+    """F37 지원하지 않는 문자 — UTF-8 이모지·기호를 그대로 보낸다 (POS 가 UTF-8 로 보내는 상황)."""
+    r, o = _r(opts)
+    _header(r, o, "지원하지 않는 문자", channel)
+    r.line("다음 두 줄은 깨져 나와도 됩니다:")
+    r.raw("메뉴: 햄버거 \U0001F354 커피 \u2615 €5 ₩1000\n".encode("utf-8"))
+    r.raw("Emoji: \U0001F600\U0001F44D\n".encode("utf-8"))
+    r.init()
+    r.line("이 줄이 정상이면 통과 (멈춤 없음)")
+    return _finish(r, o)
+
+
+def special_garbage(opts=None, channel=""):
+    """F49 쓰레기 데이터 10KB — 명령 시작 바이트(ESC·FS·GS·DLE)는 빼서 프린터 설정이 바뀌지 않게 한다."""
+    import random
+    rnd = random.Random(20261029)
+    safe = [c for c in range(256) if c not in (0x10, 0x1B, 0x1C, 0x1D)]
+    r, o = _r(opts)
+    r.line("[쓰레기 데이터 10KB 시작]")
+    r.raw(bytes(rnd.choice(safe) for _ in range(10240)))
+    r.raw(b"\n").init()
+    _header(r, o, "쓰레기 데이터 후 복구", channel)
+    r.line("이 영수증이 정상으로 나오면 통과")
+    return _finish(r, o)
+
+
+SPECIAL = {
+    "한 줄 글자 수": special_line_width,
+    "지원하지 않는 문자": special_unsupported,
+    "쓰레기 데이터": special_garbage,
 }
 
 # 에이징에서 쓸 수 있는 패턴(순번 seq 를 받는 것)
@@ -425,4 +509,5 @@ AGING_PATTERNS = {
     "영수증+이미지": lambda o, ch, s: pattern_receipt(o, ch, s, True),
     "대용량 이미지": lambda o, ch, s: pattern_large_image(o, ch, 640, s),
     "채널 표시": lambda o, ch, s: pattern_channel_mark(o, ch, s, 10),
+    "짧은 영수증": lambda o, ch, s: pattern_short(o, ch, s),
 }

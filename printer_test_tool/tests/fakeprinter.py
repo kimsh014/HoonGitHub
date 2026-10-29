@@ -45,7 +45,7 @@ class Fake:
                 if len(b) < 2: return
                 k = b[1]
                 ln = {0x40:2, 0x52:3, 0x61:3, 0x45:3, 0x2d:3, 0x64:3, 0x33:3, 0x32:2, 0x70:5, 0x74:3,
-                      0x4a:3, 0x4d:3, 0x7b:3, 0x56:3}.get(k)
+                      0x4a:3, 0x4d:3, 0x7b:3, 0x56:3, 0x21:3}.get(k)
                 if ln is None: self.stats["errors"].append(f"ESC {k:02x}"); del b[:2]; continue
                 if len(b) < ln: return
                 if k == 0x4d: self.font_b = b[2] == 1

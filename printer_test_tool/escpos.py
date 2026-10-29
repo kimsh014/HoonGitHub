@@ -151,6 +151,10 @@ class Receipt:
             self.buf += GS + b"k" + bytes([67, len(d)]) + d
         elif kind == "CODE39":
             self.buf += GS + b"k" + bytes([69, len(d)]) + d
+        elif kind == "UPCA":
+            self.buf += GS + b"k" + bytes([65, len(d)]) + d
+        elif kind == "ITF":
+            self.buf += GS + b"k" + bytes([70, len(d)]) + d
         else:
             raise ValueError(kind)
         self.raw(LF)

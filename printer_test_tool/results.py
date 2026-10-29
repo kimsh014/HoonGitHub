@@ -11,8 +11,6 @@ from testcases import TC
 RESULT_DIR = os.path.join(BASE_DIR, "results")
 RESULT_FILE = os.path.join(RESULT_DIR, "results.json")
 
-# 계획표 '체크리스트' 시트 열 위치 (A=1)
-COL_ID, COL_RESULT, COL_TESTER, COL_DATE, COL_FW, COL_DEFECT, COL_NOTE = 2, 7, 8, 9, 10, 11, 12
 EMPTY = {"result": "미실시", "tester": "", "date": "", "fw": "", "defect": "", "note": ""}
 
 
@@ -75,37 +73,74 @@ class Results:
         path = path or os.path.join(RESULT_DIR, f"결과_{datetime.datetime.now():%Y%m%d_%H%M%S}.csv")
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f)
-            w.writerow(["프린터", "구분", "ID", "항목", "합격 기준", "결과", "시험자", "시험일", "FW 버전", "결함 ID", "비고"])
+            w.writerow(["프린터", "파트", "분류", "ID", "항목", "우선", "합격 기준", "결과", "시험자", "시험일", "FW 버전", "결함 ID", "비고"])
             for printer in self.printers():
                 for t in TC:
                     r = self.get(printer, t["id"])
-                    w.writerow([printer, t["cat"], t["id"], t["name"], t["criterion"], r["result"], r["tester"],
-                                r["date"], r["fw"], r["defect"], r["note"]])
+                    w.writerow([printer, t["part"], t["cat"], t["id"], t["name"], t["prio"], t["criterion"], r["result"],
+                                r["tester"], r["date"], r["fw"], r["defect"], r["note"]])
         return path
 
     def export_xlsx(self, plan_path, printer, out_path=None):
-        """검증 계획표 엑셀의 '체크리스트' 시트에 해당 프린터 결과를 채워 새 파일로 저장."""
+        """계획표 엑셀의 '체크리스트' 시트에 해당 프린터 결과를 채워 새 파일로 저장.
+
+        열은 머리글 이름으로 찾는다 (ID / 결과 / 완료 / 시험자 / 시험일 / 결함ID / 측정값·메모 / FW 버전) —
+        새 145항목 계획표와 예전 계획표 모두 지원.
+        """
         from openpyxl import load_workbook
         wb = load_workbook(plan_path)
         if "체크리스트" not in wb.sheetnames:
-            raise ValueError("'체크리스트' 시트가 없습니다. 검증 계획표 파일을 선택하세요.")
+            raise ValueError("'체크리스트' 시트가 없습니다. 시험 계획표 파일을 선택하세요.")
         ws = wb["체크리스트"]
+        hrow, cols = find_columns(ws)
+        if not hrow or "id" not in cols or "result" not in cols:
+            raise ValueError("체크리스트 시트에서 'ID' 와 '결과' 머리글을 찾지 못했습니다.")
         mine = self.data.get(printer, {})
         written = 0
-        for row in range(1, ws.max_row + 1):
-            tcid = ws.cell(row, COL_ID).value
-            if tcid in mine:
-                r = self.get(printer, tcid)
-                ws.cell(row, COL_RESULT).value = r["result"]
-                ws.cell(row, COL_TESTER).value = r["tester"]
-                ws.cell(row, COL_DATE).value = r["date"]
-                ws.cell(row, COL_FW).value = r["fw"]
-                ws.cell(row, COL_DEFECT).value = r["defect"]
-                ws.cell(row, COL_NOTE).value = r["note"]
-                written += 1
+        for row in range(hrow + 1, ws.max_row + 1):
+            tcid = ws.cell(row, cols["id"]).value
+            if tcid not in mine:
+                continue
+            r = self.get(printer, tcid)
+            if r["result"] == "미실시" and not r["note"]:
+                continue
+            put = {"result": "" if r["result"] == "미실시" else r["result"], "tester": r["tester"], "date": r["date"],
+                   "fw": r["fw"], "defect": r["defect"], "note": r["note"],
+                   "done": "✔" if r["result"] in ("Pass", "Fail", "N/A") else ""}
+            for key, val in put.items():
+                if key in cols and val != "":
+                    ws.cell(row, cols[key]).value = val
+            written += 1
         wb.calculation.fullCalcOnLoad = True
         if not out_path:
             root, ext = os.path.splitext(plan_path)
             out_path = f"{root}_결과_{_safe(printer)}_{datetime.datetime.now():%m%d_%H%M}{ext}"
         wb.save(out_path)
         return out_path, written
+
+
+HEADERS = {
+    "id": ("ID",),
+    "result": ("결과",),
+    "done": ("완료",),
+    "tester": ("시험자",),
+    "date": ("시험일", "일시"),
+    "defect": ("결함ID", "결함 ID"),
+    "note": ("측정값 / 메모", "측정값/메모", "비고"),
+    "fw": ("FW 버전", "FW"),
+}
+
+
+def find_columns(ws, max_rows=10):
+    """머리글 행과 {키: 열 번호}. 머리글은 위쪽 max_rows 행 안에서 'ID' 가 있는 행."""
+    for row in range(1, max_rows + 1):
+        names = {str(ws.cell(row, c).value or "").strip(): c for c in range(1, ws.max_column + 1)}
+        if "ID" in names:
+            cols = {}
+            for key, cands in HEADERS.items():
+                for cand in cands:
+                    if cand in names:
+                        cols[key] = names[cand]
+                        break
+            return row, cols
+    return None, {}

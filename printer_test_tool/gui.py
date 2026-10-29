@@ -23,7 +23,7 @@ from tkinter.scrolledtext import ScrolledText
 import engine
 import patterns
 from results import Results
-from testcases import BY_ID, TC
+from testcases import BY_ID, PARTS, TC
 from transports import TransportError, list_com_ports, list_win_printers, make_transport
 
 APP_TITLE = "열전사 프린터 검증 도구"
@@ -36,6 +36,7 @@ FLOWS = ("없음", "RTS/CTS", "DTR/DSR", "XON/XOFF")
 IFACE_DEFAULTS = {"RS232": {"baud": "9600", "flow": "없음"}, "USB": {"baud": "9600", "flow": "없음"},
                   "BT": {"baud": "9600", "flow": "없음"}}
 MAX_PRINTERS = 9
+AGING_TC = {"RS232": "S31", "BT": "BT40"}   # 에이징 결과를 기록할 테스트 케이스 (그 외 F55)
 
 
 def resource_path(name):
@@ -547,28 +548,42 @@ class App(tk.Tk):
         nb.add(f, text=" 2. 테스트 케이스 ")
         left = ttk.Frame(f)
         left.pack(side="left", fill="both", expand=True)
-        cols = ("id", "cat", "name", "result")
-        tv = ttk.Treeview(left, columns=cols, show="headings", height=20, selectmode="browse")
-        for c, t, w in zip(cols, ("ID", "구분", "항목", "결과"), (48, 92, 180, 64)):
+        flt = ttk.Frame(left)
+        flt.pack(side="top", fill="x", pady=(0, 4))
+        ttk.Label(flt, text="파트").pack(side="left")
+        self.part_flt = tk.StringVar(value="전체")
+        ttk.Combobox(flt, textvariable=self.part_flt, values=["전체"] + PARTS, width=16, state="readonly").pack(side="left", padx=4)
+        ttk.Label(flt, text="우선").pack(side="left", padx=(6, 0))
+        self.prio_flt = tk.StringVar(value="전체")
+        ttk.Combobox(flt, textvariable=self.prio_flt, values=("전체", "필수", "권장", "선택"), width=6, state="readonly").pack(side="left", padx=4)
+        ttk.Label(flt, text="결과").pack(side="left", padx=(6, 0))
+        self.res_flt = tk.StringVar(value="전체")
+        ttk.Combobox(flt, textvariable=self.res_flt, values=("전체", "미실시", "Pass", "Fail", "N/A"), width=7, state="readonly").pack(side="left", padx=4)
+        for v in (self.part_flt, self.prio_flt, self.res_flt):
+            v.trace_add("write", lambda *a: self._fill_tv())
+        tree = ttk.Frame(left)
+        tree.pack(fill="both", expand=True)
+        cols = ("id", "cat", "name", "prio", "result")
+        tv = ttk.Treeview(tree, columns=cols, show="headings", height=20, selectmode="browse")
+        for c, t, w in zip(cols, ("ID", "분류", "항목", "우선", "결과"), (46, 78, 170, 40, 58)):
             tv.heading(c, text=t)
-            tv.column(c, width=w, anchor="center" if c in ("id", "result") else "w")
+            tv.column(c, width=w, anchor="center" if c in ("id", "prio", "result") else "w")
         tv.tag_configure("Pass", background="#C6EFCE")
         tv.tag_configure("Fail", background="#FFC7CE")
         tv.tag_configure("N/A", background="#EDEDED")
-        sb = ttk.Scrollbar(left, command=tv.yview)
+        tv.tag_configure("필수", foreground="#C00000")
+        sb = ttk.Scrollbar(tree, command=tv.yview)
         tv.configure(yscrollcommand=sb.set)
         tv.pack(side="left", fill="both", expand=True)
         sb.pack(side="left", fill="y")
         tv.bind("<<TreeviewSelect>>", lambda e: self._tc_select())
         self.tv = tv
-        for t in TC:
-            tv.insert("", "end", iid=t["id"], values=(t["id"], t["cat"], t["name"], ""))
 
         right = ttk.Frame(f, padding=(10, 0))
         right.pack(side="left", fill="both", expand=True)
         self.tc_title = tk.StringVar()
         ttk.Label(right, textvariable=self.tc_title, font=("", 12, "bold")).pack(anchor="w")
-        self.tc_info = tk.Text(right, height=7, wrap="word", relief="flat", background="#F7F7F7")
+        self.tc_info = tk.Text(right, height=8, wrap="word", relief="flat", background="#F7F7F7")
         self.tc_info.pack(fill="x", pady=4)
 
         run = ttk.LabelFrame(right, text="실행 대상 — 체크한 통신마다 따로 인쇄 (●=연결됨)", padding=6)
@@ -592,35 +607,65 @@ class App(tk.Tk):
         self.defect_var = tk.StringVar()
         ttk.Entry(rb, textvariable=self.defect_var, width=10).pack(side="left", padx=4)
         ttk.Label(res, text="비고 (실행 결과가 자동으로 추가됩니다)").pack(anchor="w", pady=(6, 0))
-        self.note = tk.Text(res, height=6, wrap="word")
+        self.note = tk.Text(res, height=4, wrap="word")
         self.note.pack(fill="both", expand=True)
         bb = ttk.Frame(res)
-        bb.pack(fill="x", pady=4)
+        bb.pack(fill="x", pady=4, side="bottom", before=self.note)   # 화면이 작아도 저장 버튼이 먼저 자리를 차지
         ttk.Button(bb, text="결과 저장", style="Big.TButton", command=self._tc_save).pack(side="left")
         ttk.Button(bb, text="저장 후 다음 ▶", command=lambda: self._tc_save(next_=True)).pack(side="left", padx=4)
 
         ex = ttk.Frame(right)
-        ex.pack(fill="x")
+        ex.pack(fill="x", side="bottom", before=res)                  # 내보내기 줄도 항상 보이게
         self.count_var = tk.StringVar()
-        ttk.Label(ex, textvariable=self.count_var).pack(side="left")
         ttk.Button(ex, text="계획표 엑셀에 결과 반영", command=self._export_xlsx).pack(side="right")
         ttk.Button(ex, text="CSV 내보내기", command=self._export_csv).pack(side="right", padx=4)
+        ttk.Label(right, textvariable=self.count_var, foreground="#1F4E78").pack(side="bottom", anchor="w", before=ex)
         self._refresh_targets_ui()
-        tv.selection_set(TC[0]["id"])
+        self._fill_tv()
 
     def _cur_printer(self):
         return self.tc_pick["printer"].get()
 
+    def _visible_tc(self):
+        pr, part, prio, res = self._cur_printer(), self.part_flt.get(), self.prio_flt.get(), self.res_flt.get()
+        out = []
+        for t in TC:
+            if part != "전체" and t["part"] != part:
+                continue
+            if prio != "전체" and t["prio"] != prio:
+                continue
+            if res != "전체" and self.results.get(pr, t["id"])["result"] != res:
+                continue
+            out.append(t)
+        return out
+
+    def _fill_tv(self):
+        """필터에 맞는 항목으로 목록을 다시 채운다 (선택은 가능하면 유지)."""
+        keep = self.tv.selection()
+        self.tv.delete(*self.tv.get_children())
+        for t in self._visible_tc():
+            self.tv.insert("", "end", iid=t["id"], values=(t["id"], t["cat"], t["name"], t["prio"], ""))
+        self._refresh_tv()
+        kids = self.tv.get_children()
+        if keep and keep[0] in kids:
+            self.tv.selection_set(keep[0])
+        elif kids:
+            self.tv.selection_set(kids[0])
+
     def _refresh_tv(self):
         pr = self._cur_printer()
-        for t in TC:
-            r = self.results.get(pr, t["id"])["result"]
-            self.tv.item(t["id"], values=(t["id"], t["cat"], t["name"], r), tags=(r,))
+        for iid in self.tv.get_children():
+            t = BY_ID[iid]
+            r = self.results.get(pr, iid)["result"]
+            self.tv.item(iid, values=(iid, t["cat"], t["name"], t["prio"], r),
+                         tags=(r,) if r != "미실시" else ((t["prio"],) if t["prio"] == "필수" else ()))
         c = self.results.counts(pr)
         done = c["Pass"] + c["Fail"]
         rate = f"{c['Pass'] / done * 100:.0f}%" if done else "-"
-        self.count_var.set(f"[{pr or '-'}] 전체 {len(TC)} | Pass {c['Pass']} | Fail {c['Fail']} | N/A {c['N/A']} | "
-                           f"미실시 {c['미실시']} | 합격률 {rate}")
+        must = [t for t in TC if t["prio"] == "필수"]
+        must_done = sum(self.results.get(pr, t["id"])["result"] != "미실시" for t in must)
+        self.count_var.set(f"[{pr or '-'}] 전체 {len(TC)} | 필수 {must_done}/{len(must)} | Pass {c['Pass']} | Fail {c['Fail']} | "
+                           f"N/A {c['N/A']} | 미실시 {c['미실시']} | 합격률 {rate}")
         if self._cur():
             self._load_result()
 
@@ -640,13 +685,14 @@ class App(tk.Tk):
         t = self._cur()
         if not t:
             return
-        self.tc_title.set(f"{t['id']}  {t['name']}  ({t['cat']})")
+        self.tc_title.set(f"{t['id']}  {t['name']}   [{t['prio']}]  {t['part']} · {t['cat']}")
         self.tc_info.configure(state="normal")
         self.tc_info.delete("1.0", "end")
         how = {"RS232": "RS232 에서 실행", "USB": "USB 에서 실행", "BT": "BT 에서 실행",
                "ANY": "체크한 통신마다 각각 실행", "ALL": "체크한 통신을 함께 사용"}[t["channel"]]
         auto = "수동 확인 항목 (실행 버튼 없음)" if t["action"] is None else f"프로그램 실행 지원 — {how}"
-        self.tc_info.insert("end", f"방법: {t['method']}\n합격 기준: {t['criterion']}\n{auto}\n\n{t['guide']}")
+        self.tc_info.insert("end", f"방법: {t['method']}\n합격 기준: {t['criterion']}\n왜 필요한가: {t['why']}\n"
+                                   f"도구: {t['tool']}\n{auto}\n\n{t['guide'] or t['method']}")
         self.tc_info.configure(state="disabled")
         p = self.printer_by_name(self._cur_printer())
         for i in IFACES:
@@ -669,10 +715,10 @@ class App(tk.Tk):
         self._refresh_tv()
         self.log(f"[{pr}][{t['id']}] 결과 저장: {self.res_var.get()}")
         if next_:
-            i = [x["id"] for x in TC].index(t["id"])
-            if i + 1 < len(TC):
-                self.tv.selection_set(TC[i + 1]["id"])
-                self.tv.see(TC[i + 1]["id"])
+            nxt = self.tv.next(t["id"]) if self.tv.exists(t["id"]) else ""
+            if nxt:
+                self.tv.selection_set(nxt)
+                self.tv.see(nxt)
 
     def _tc_done(self, printer, tid, res):
         line = f"[{time.strftime('%m-%d %H:%M')}] {res.get('summary', '')}"
@@ -720,7 +766,7 @@ class App(tk.Tk):
         # ---- 실행 전에 필요한 값 묻기 (메인 스레드) ----
         params = {}
         if kind == "burst":
-            if tid == "T03":
+            if tid in ("BT28", "BT29", "BT31", "BT33"):
                 d = simpledialog.askstring(APP_TITLE, "현재 거리(예: 1m, 5m, 10m)", parent=self)
                 if d is None:
                     return
@@ -738,7 +784,7 @@ class App(tk.Tk):
             if not params["n"]:
                 return
         elif kind == "comm":
-            if tid == "R01":
+            if tid == "S03":
                 bauds = simpledialog.askstring(APP_TITLE, "시험할 속도(쉼표 구분)",
                                                initialvalue="9600,19200,38400,57600,115200", parent=self)
                 fmts = "8N1"
@@ -755,6 +801,18 @@ class App(tk.Tk):
         elif kind == "mismatch":
             params["wb"] = simpledialog.askinteger(APP_TITLE, "일부러 틀리게 보낼 속도", initialvalue=9600, parent=self)
             if not params["wb"]:
+                return
+        elif kind == "idle":
+            params["min"] = simpledialog.askinteger(APP_TITLE, "몇 분 기다렸다가 인쇄할까요?", initialvalue=a[1], minvalue=0, parent=self)
+            if params["min"] is None:
+                return
+        elif kind == "rapid_cut":
+            params["n"] = simpledialog.askinteger(APP_TITLE, f"몇 번 자를까요? ({a[2]}초 간격)", initialvalue=a[1], minvalue=1, parent=self)
+            if not params["n"]:
+                return
+        elif kind == "busy_send":
+            params["n"] = simpledialog.askinteger(APP_TITLE, "용지 없음 상태에서 보낼 장수", initialvalue=a[1], minvalue=1, parent=self)
+            if not params["n"]:
                 return
         elif kind in ("x02", "x03") and len(labels) < 2:
             messagebox.showwarning(APP_TITLE, "이 시험은 통신을 2개 이상 체크해야 합니다.")
@@ -778,6 +836,22 @@ class App(tk.Tk):
                 return engine.act_cut(s, lab, params["n"], task)
             if kind == "drawer":
                 return engine.act_drawer(s, lab, task)
+            if kind == "drawer_print":
+                return engine.act_drawer_print(s, lab, task)
+            if kind == "idle":
+                return engine.act_idle_print(s, lab, params["min"], task)
+            if kind == "rapid_cut":
+                return engine.act_rapid_cut(s, lab, params["n"], a[2], task)
+            if kind == "busy_send":
+                return engine.act_busy_send(s, lab, params["n"], task, self.ask_main)
+            if kind == "status_during":
+                return engine.act_status_during(s, lab, task)
+            if kind == "rate":
+                return engine.act_transfer_rate(s, lab, a[1], task)
+            if kind == "half_cmd":
+                return engine.act_half_command(s, lab, task)
+            if kind == "isolate":
+                return engine.act_isolate_commands(s, lab, task, self.ask_main)
             if kind == "comm":
                 return engine.act_comm_configs(s, lab, params["cfgs"], self.ask_main, task)
             if kind == "mismatch":
@@ -1056,7 +1130,8 @@ class App(tk.Tk):
     def _ag_finished(self, lab, runner, res):
         printer, iface = lab.rsplit("/", 1)
         p = self.printer_by_name(printer)
-        self.results.add_note(printer, "X04", f"[{time.strftime('%m-%d %H:%M')}] 에이징 {iface}: {res.get('summary', '')}",
+        tid = AGING_TC.get(iface, "F55")
+        self.results.add_note(printer, tid, f"[{time.strftime('%m-%d %H:%M')}] 에이징 {iface}: {res.get('summary', '')}",
                               tester=self.common["tester"].get(), fw=p.fw.get() if p else "")
         self._refresh_tv()
         if not any(t.runner and t.running for t in self.tasks.values()) and not self._closing:
@@ -1066,7 +1141,7 @@ class App(tk.Tk):
                     st = t.runner.stats[t.targets[0]]
                     lines.append(f"{t.targets[0]}: 전송 {st['sent']} / 정상 {st['ok']} / 실패 {st['fail']}")
             messagebox.showinfo(APP_TITLE, "진행 중인 에이징이 모두 끝났습니다.\n\n" + "\n".join(lines[-12:]) +
-                                "\n\n자세한 내용은 X04 비고와 logs 폴더 CSV 를 확인하세요.")
+                                "\n\n자세한 내용은 테스트 케이스 S31(RS232)·BT40(BT)·F55(그 외) 비고와 logs 폴더 CSV 를 확인하세요.")
 
     # ================================================================ 4. 패턴 인쇄 / 명령
     def _build_manual(self, nb):
