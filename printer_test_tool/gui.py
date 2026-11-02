@@ -21,6 +21,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from tkinter.scrolledtext import ScrolledText
 
 import engine
+import imagedialog
 import patterns
 from results import Results
 from testcases import BY_ID, PARTS, TC
@@ -1165,6 +1166,8 @@ class App(tk.Tk):
         ttk.Label(a, text="반복").pack(side="left", padx=(10, 0))
         ttk.Entry(a, textvariable=self.m_rep, width=5).pack(side="left", padx=4)
         ttk.Button(a, text="인쇄", command=self._m_print).pack(side="left", padx=8)
+        ttk.Separator(a, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Button(a, text="이미지 파일 인쇄 (JPG/PNG)…", command=self._m_image).pack(side="left")
 
         b = ttk.LabelFrame(f, text="조회", padding=8)
         b.pack(fill="x")
@@ -1223,6 +1226,27 @@ class App(tk.Tk):
             task.report(None, len(labels) * n, len(labels) * n)
             return {"summary": f"{pat} × {n} 완료 ({', '.join(lb.split('/')[-1] for lb in labels)})"}
         self.start_task(f"패턴 인쇄: {pat}", labels, work, lambda r: self.log(r.get("summary", "")))
+
+    def _m_image(self):
+        pr, labels = self._m_labels()
+        if not labels:
+            return
+        res = imagedialog.ask_image(self, self.session.opts["dots"], self.session.opts["cut"])
+        if not res:
+            return
+        data, name = res
+
+        def work(task):
+            out = []
+            for k, lab in enumerate(labels):
+                if task.is_set():
+                    break
+                task.report(f"{lab} 이미지 {name}", k, len(labels))
+                r = engine.act_image_data(self.session, lab, data, name, task)
+                out.append(f"[{lab.split('/')[-1]}] {r['summary']}")
+            task.report(None, len(labels), len(labels))
+            return {"summary": " / ".join(out)}
+        self.start_task(f"이미지 파일: {name}", labels, work, lambda r: self.log(r.get("summary", "")))
 
     def _m_run(self, name, fn):
         pr, labels = self._m_labels()

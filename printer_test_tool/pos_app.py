@@ -17,6 +17,7 @@ import tkinter.font as tkfont
 from tkinter import ttk
 
 import engine
+import imagedialog
 from transports import TransportError, list_com_ports, list_win_printers, make_transport
 
 SETTINGS_FILE = os.path.join(engine.BASE_DIR, "pos_settings.json")
@@ -41,6 +42,7 @@ PRINT_ITEMS = (
     ("QR 코드", "pattern", "QR 코드"),
     ("이미지", "pattern", "이미지"),
     ("대용량 이미지", "pattern", "대용량 이미지"),
+    ("이미지 파일 (JPG)", "imagefile", None),
     ("농도", "pattern", "농도"),
     ("헤드 도트 체크", "pattern", "헤드 도트 체크"),
     ("컷 (부분+전체)", "cut", None),
@@ -279,6 +281,14 @@ class PosApp:
         if self.busy:
             self.message(f"'{self.busy}' 인쇄 중입니다. 끝난 뒤 다시 누르거나 [중지]를 누르세요.", C_BUSY)
             return
+        if kind == "imagefile":
+            if describe(self.s["ifaces"][name]) == "설정 필요":
+                self.message(f"{name} 포트가 설정되지 않았습니다. 우측 하단 [설정]에서 선택하세요.", C_ERR)
+                return
+            pat = imagedialog.ask_image(self.root, self.s["dots"], self.s["cut"], self.f_mid)
+            if not pat:
+                return
+            label = f"이미지 {pat[1]}"
         self.busy = f"{name} {label}"
         self.cancel.clear()
         self.stop_btn.pack(side="right", padx=4, pady=10, fill="y")
@@ -292,6 +302,8 @@ class PosApp:
                 self.dirty[name] = False
             if kind == "pattern":
                 r = engine.act_print(self.session, name, pat, self.cancel)
+            elif kind == "imagefile":
+                r = engine.act_image_data(self.session, name, pat[0], pat[1], self.cancel)
             elif kind == "cut":
                 r = engine.act_cut(self.session, name, 1, self.cancel)
             elif kind == "drawer":

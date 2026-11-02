@@ -384,3 +384,61 @@ class NewActionsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ImageFileTest(unittest.TestCase):
+    """이미지 파일 인쇄: 변환 결과와 ESC/POS 스트림 검증."""
+
+    def make(self, size, color=(0, 0, 0), mode="RGB"):
+        from PIL import Image, ImageDraw
+        im = Image.new(mode, size, (255, 255, 255, 0) if mode == "RGBA" else (255, 255, 255))
+        ImageDraw.Draw(im).rectangle((0, 0, size[0] // 2 - 1, size[1] - 1), fill=color)
+        path = os.path.join(tempfile.mkdtemp(), "t.png" if mode == "RGBA" else "t.jpg")
+        im.save(path)
+        return path
+
+    def test_convert_scales_aligns_and_inverts(self):
+        import imageprint
+        src = imageprint.load(self.make((1200, 600)))
+        bw = imageprint.convert(src, dots=576, width_pct=50, mode="logo", align="left")
+        self.assertEqual(bw.size, (576, 144))          # 50% = 288 도트, 비율 유지 600*288/1200
+        data = imageprint.to_escpos(bw, cut="partial")
+        # 첫 행: 왼쪽 144도트(18바이트) 검정 = 0xFF, 나머지 흰색 = 0x00
+        i = data.index(b"\x1dv0") + 8
+        row = data[i:i + 72]
+        self.assertEqual(row[:17], b"\xff" * 17)
+        self.assertEqual(row[19:], b"\x00" * 53)
+
+    def test_small_image_not_enlarged_and_transparent_is_white(self):
+        import imageprint
+        src = imageprint.load(self.make((100, 40), color=(0, 0, 0, 255), mode="RGBA"))
+        bw = imageprint.convert(src, dots=576, align="center")
+        self.assertEqual(bw.info["img_w"], 100)
+        self.assertEqual(bw.size, (576, 40))
+        # 투명했던 오른쪽 절반은 흰색(=인쇄 안 함)
+        self.assertEqual(bw.getpixel((238 + 75, 20)), 255)
+        self.assertEqual(bw.getpixel((238 + 10, 20)), 0)
+
+    def test_long_image_capped(self):
+        import imageprint
+        from PIL import Image
+        bw = imageprint.convert(Image.new("RGB", (576, 9000), (128, 128, 128)), dots=576)
+        self.assertEqual(bw.height, imageprint.MAX_ROWS)
+        self.assertIn("잘립니다", imageprint.info(Image.new("RGB", (576, 9000)), bw))
+
+    def test_print_through_fake_printer(self):
+        import imageprint
+        s = engine.Session(log=lambda m: None)
+        f = Fake()
+        connect(s, "RS232", f)
+        try:
+            bw = imageprint.convert(imageprint.load(self.make((800, 1000))), dots=576, mode="photo")
+            r = engine.act_image_data(s, "RS232", imageprint.to_escpos(bw), "t.jpg", threading.Event())
+            time.sleep(0.5)
+        finally:
+            s.close_all()
+        self.assertEqual(f.stats["errors"], [])
+        self.assertEqual(f.stats["cuts"], 1)
+        self.assertEqual(f.stats["rasters"], -(-bw.height // 24))
+        self.assertLessEqual(f.stats["raster_max_bytes"], 72 * 24)
+        self.assertIn("t.jpg", r["summary"])

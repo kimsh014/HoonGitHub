@@ -191,6 +191,13 @@ def act_print(session, label, pattern_name, cancel=None, **kw):
             "summary": f"{pattern_name} 인쇄 완료 — 출력물을 확인하세요. {r['text']}"}
 
 
+def act_image_data(session, label, data, name, cancel=None):
+    """imageprint.to_escpos 로 만든 이미지 파일 데이터를 그대로 전송."""
+    r = send(session, label, data, f"이미지 파일 {name}", check_status=True, cancel=cancel)
+    return {"suggest": "FAIL" if r["code"] == "ERROR" else None,
+            "summary": f"이미지 {name} 인쇄 완료 ({len(data) / 1024:.0f}KB, {r['secs']:.1f}초). {r['text']}".strip()}
+
+
 def act_burst(session, label, pattern_name, count, cancel, tag=""):
     """같은 패턴을 순번을 붙여 연속 인쇄 (대용량/거리/누락 시험)."""
     csvlog = CsvLog(f"burst_{label}")

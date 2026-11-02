@@ -205,6 +205,15 @@ class Receipt:
         self.height += len(rows)
         return self
 
+    def raster_packed(self, wbytes, height, data, band=RASTER_BAND):
+        """이미 1비트로 묶인 래스터(행마다 wbytes 바이트, MSB 가 왼쪽, 1 = 검정)를 band 행씩 GS v 0 로."""
+        for start in range(0, height, band):
+            h = min(band, height - start)
+            part = data[start * wbytes:(start + h) * wbytes]
+            self.buf += GS + b"v0" + bytes([0, wbytes & 0xFF, wbytes >> 8, h & 0xFF, h >> 8]) + part
+        self.height += height
+        return self
+
     def height_mm(self):
         return self.height * DOT_MM
 
