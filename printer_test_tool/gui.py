@@ -768,7 +768,7 @@ class App(tk.Tk):
         params = {}
         if kind == "burst":
             if tid in ("BT28", "BT29", "BT31", "BT33"):
-                d = simpledialog.askstring(APP_TITLE, "현재 거리(예: 1m, 5m, 10m)", parent=self)
+                d = simpledialog.askstring(APP_TITLE, "현재 거리(예: 1m, 10m, 30m)", parent=self)
                 if d is None:
                     return
                 params["tag"] = f"@{d}"
