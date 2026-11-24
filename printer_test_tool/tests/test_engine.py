@@ -1,0 +1,444 @@
+# -*- coding: utf-8 -*-
+"""가짜 프린터(pty)로 엔진을 검증한다. Linux/macOS 전용.
+
+실행: python -m unittest discover -s tests -v   (printer_test_tool 폴더에서)
+"""
+import os
+import sys
+import tempfile
+import threading
+import time
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+sys.path.insert(0, HERE)
+
+import engine  # noqa: E402
+import patterns  # noqa: E402
+from escpos import parse_status  # noqa: E402
+from fakeprinter import Fake  # noqa: E402
+from transports import make_transport  # noqa: E402
+
+engine.LOG_DIR = tempfile.mkdtemp()
+
+
+def connect(session, label, fake, **kw):
+    tr = make_transport(label, {"kind": "COM", "port": fake.path, **kw})
+    tr.open()
+    session.add(tr)
+    return tr
+
+
+class EngineTest(unittest.TestCase):
+    def setUp(self):
+        self.logs = []
+        self.s = engine.Session(log=self.logs.append)
+        self.cancel = threading.Event()
+
+    def tearDown(self):
+        self.s.close_all()
+
+    def settle(self):
+        time.sleep(0.5)
+
+    def test_all_patterns_are_valid_escpos(self):
+        f = Fake()
+        connect(self.s, "RS232", f)
+        for name in patterns.PATTERNS:
+            engine.act_print(self.s, "RS232", name, self.cancel)
+        self.settle()
+        self.assertEqual(f.stats["errors"], [])
+        self.assertEqual(f.stats["cuts"], len(patterns.PATTERNS))
+        self.assertGreaterEqual(f.stats["qr_print"], 3)
+
+    def test_patterns_fit_receipt_length(self):
+        """모든 패턴(속도 시험 제외)은 기본 영수증 길이(120mm) 안에 들어가야 한다."""
+        orig, heights = patterns._finish, {}
+
+        def spy(r, o, fixed_length=True):
+            heights[name] = r.height_mm()
+            return orig(r, o, fixed_length)
+        patterns._finish = spy
+        try:
+            for name, fn in patterns.PATTERNS.items():
+                fn({"length_mm": 0}, "프린터1/RS232")
+        finally:
+            patterns._finish = orig
+        too_long = {k: round(v) for k, v in heights.items() if v > 120}
+        self.assertEqual(too_long, {})
+
+    def test_large_image_is_sent_in_small_bands(self):
+        """대용량 이미지가 한 덩어리(46KB)로 가면 프린터 버퍼를 넘어 쓰레기 문자가 찍힌다."""
+        f = Fake()
+        connect(self.s, "RS232", f)
+        engine.act_print(self.s, "RS232", "대용량 이미지", self.cancel)
+        self.settle()
+        self.assertEqual(f.stats["errors"], [])
+        self.assertLessEqual(f.stats["raster_max_bytes"], 24 * 72)
+        self.assertGreaterEqual(f.stats["raster_bytes"], 640 * 72)
+        self.assertTrue(any("이 줄이 보이면 누락 없음" in t for t in f.stats["text"]))
+
+    def test_status_parse(self):
+        self.assertEqual(parse_status(1, 0x16)["text"], "드로어 핀 High")
+        self.assertTrue(parse_status(4, 0x72)["error"])
+        self.assertTrue(parse_status(2, 0x16)["error"])        # 커버 열림
+        self.assertFalse(parse_status(1, 0x01)["valid"])       # 고정 비트 위반
+
+    def test_status_query(self):
+        f = Fake()
+        connect(self.s, "RS232", f)
+        self.assertEqual(engine.act_status(self.s, "RS232")["suggest"], "PASS")
+
+    def test_aging_alternate_and_concurrent(self):
+        a, b = Fake(), Fake()
+        connect(self.s, "USB", a)
+        connect(self.s, "BT", b)
+        r = engine.AgingRunner(self.s, ["USB", "BT"], "교대", "영수증", count=6, interval=0)
+        r.run()
+        self.assertEqual((r.stats["USB"]["ok"], r.stats["BT"]["ok"]), (3, 3))
+        r = engine.AgingRunner(self.s, ["USB", "BT"], "동시", "채널 표시", count=6, interval=0)
+        r.run()
+        self.settle()
+        self.assertEqual(r.total, 6)
+        self.assertFalse([l for l in b.stats["text"] if "[USB]" in l])  # 섞임 없음
+
+    def test_aging_pauses_on_paper_out(self):
+        f = Fake(paper_out_after=1)
+        connect(self.s, "RS232", f)
+        r = engine.AgingRunner(self.s, ["RS232"], "기본", "영수증", count=3, interval=0)
+        th = threading.Thread(target=r.run)
+        th.start()
+        time.sleep(3)
+        self.assertEqual(r.stats["RS232"]["pause"], 1)
+        f.paper_out_after = None           # 용지 보충
+        th.join(15)
+        self.assertEqual(r.total, 3)
+        self.assertEqual(r.stats["RS232"]["fail"], 0)
+
+    def test_reconnect_monitor(self):
+        f = Fake()
+        connect(self.s, "USB", f)
+        present = {"on": True}
+        orig = engine.list_com_ports
+        engine.list_com_ports = lambda: [(f.path, "fake")] if present["on"] else []
+
+        def toggle():
+            for _ in range(2):
+                time.sleep(1.0)
+                present["on"] = False
+                time.sleep(1.0)
+                present["on"] = True
+        threading.Thread(target=toggle, daemon=True).start()
+        try:
+            r = engine.act_reconnect(self.s, "USB", 2, self.cancel, timeout_s=15)
+        finally:
+            engine.list_com_ports = orig
+        self.assertEqual(r["suggest"], "PASS")
+
+    def test_csv_log_survives_locked_file(self):
+        log = engine.CsvLog("locktest")
+        real = log.path
+        log.path = engine.LOG_DIR            # 디렉터리 → 열기 실패(엑셀이 잠근 상황 흉내)
+        log.row("t", "c", 1, "OK")           # 예외 없이 보관만 해야 함
+        self.assertEqual(len(log.pending), 1)
+        log.path = real
+        log.row("t", "c", 2, "OK")           # 잠금 해제 후 밀린 줄까지 기록
+        with open(real, encoding="utf-8-sig") as f:
+            self.assertEqual(len(f.read().strip().splitlines()), 3)   # 헤더 + 2줄
+
+    def test_urgent_status_query(self):
+        f = Fake()
+        tr = connect(self.s, "RS232", f, flow="RTS/CTS")
+        st = engine.read_status(tr, urgent=True)
+        self.assertEqual(len(st), 4)
+        self.assertTrue(tr.ser.rtscts)       # 흐름제어 설정 복원
+
+    def test_pause_recovers_after_handle_dies(self):
+        f = Fake(paper_out_after=1)
+        tr = connect(self.s, "RS232", f)
+        r = engine.AgingRunner(self.s, ["RS232"], "기본", "영수증", count=2, interval=0)
+        th = threading.Thread(target=r.run)
+        th.start()
+        time.sleep(2.5)
+        self.assertEqual(r.stats["RS232"]["pause"], 1)
+        tr.ser.close()                       # 일시정지 중 핸들이 죽음(프린터 재부팅 등)
+        f.paper_out_after = None
+        th.join(20)
+        self.assertFalse(th.is_alive())
+        self.assertEqual(r.total, 2)
+        self.assertIsNotNone(r.ended)
+        e1 = r.elapsed()
+        time.sleep(0.3)
+        self.assertEqual(r.elapsed(), e1)    # 종료 후 경과 시간 고정
+
+
+class DiagnoseTest(unittest.TestCase):
+    def test_diagnose_finds_settings(self):
+        f = Fake()
+        r = engine.act_diagnose(f.path, log=lambda m: None)
+        self.assertEqual(r["found"], {"baud": 9600, "flow": "없음"})
+
+    def test_diagnose_one_way_prints_each_baud(self):
+        f = Fake(status_reply=False)
+        r = engine.act_diagnose(f.path, log=lambda m: None)
+        time.sleep(0.5)
+        self.assertIsNone(r["found"])
+        printed = [t for t in f.stats["text"] if t.startswith("==== BAUD")]
+        self.assertEqual(len(printed), len(engine.DIAG_BAUDS))
+
+
+class OneWayTest(unittest.TestCase):
+    """프린터→PC 응답이 없는(단방향) 연결."""
+
+    def setUp(self):
+        self.s = engine.Session(log=lambda m: None)
+
+    def tearDown(self):
+        self.s.close_all()
+
+    def test_aging_without_status_is_not_failure(self):
+        f = Fake(status_reply=False)
+        connect(self.s, "RS232", f)
+        r = engine.AgingRunner(self.s, ["RS232"], "기본", "영수증", count=4, interval=0)
+        r.run()
+        time.sleep(0.5)
+        self.assertEqual((r.stats["RS232"]["ok"], r.stats["RS232"]["fail"]), (4, 0))
+        self.assertEqual(f.stats["cuts"], 4)
+        self.assertEqual(f.stats["status_q"], 1)       # 첫 장에서 한 번 조회(무응답) → 이후 생략
+
+    def test_reconnect_manual_mode(self):
+        f = Fake(status_reply=False)
+        connect(self.s, "RS232", f)
+        orig = engine.list_com_ports
+        engine.list_com_ports = lambda: [(f.path, "fake")]
+        answers = []
+        try:
+            r = engine.act_reconnect(self.s, "RS232", 2, threading.Event(),
+                                     confirm=lambda msg: answers.append(msg) or True)
+        finally:
+            engine.list_com_ports = orig
+        time.sleep(0.5)
+        self.assertEqual(r["suggest"], "PASS")
+        self.assertIn("수동 확인 모드", r["summary"])
+        self.assertEqual(len(answers), 1 + 2 * 2)       # 모드 확인 + (전원 반복 확인, 출력 확인) × 2
+        self.assertEqual(f.stats["cuts"], 2)
+
+
+class ManualTest(unittest.TestCase):
+    def test_manual_is_up_to_date(self):
+        """manual.html 은 make_manual.py 로 만든 최신본이어야 한다 (테스트 케이스 표 자동 생성)."""
+        import make_manual
+        path = make_manual.OUT
+        with open(path, encoding="utf-8") as f:
+            before = f.read()
+        make_manual.main()
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(before, f.read(), "manual.html 이 최신이 아닙니다: python make_manual.py 실행 후 커밋")
+
+
+try:
+    import tkinter  # noqa: F401
+    HAS_TK = True
+except ImportError:
+    HAS_TK = False
+
+
+@unittest.skipUnless(HAS_TK, "tkinter 없음")
+class PosSettingsTest(unittest.TestCase):
+    """POS 간편 화면(pos_app) 의 설정 → 연결 변환."""
+
+    def test_transport_cfg(self):
+        import pos_app
+        with self.assertRaises(ValueError):
+            pos_app.transport_cfg({"kind": "COM", "port": ""})
+        self.assertEqual(pos_app.transport_cfg({"kind": "COM", "port": "COM1", "baud": "9600", "flow": "없음"}),
+                         {"kind": "COM", "port": "COM1", "baudrate": 9600, "flow": "없음"})
+        self.assertEqual(pos_app.transport_cfg({"kind": "WinPrinter", "printer": "P1"})["kind"], "WinPrinter")
+        self.assertEqual(pos_app.describe({"kind": "COM", "port": ""}), "설정 필요")
+
+    def test_same_items_without_text_format(self):
+        import pos_app
+        names = {n: [i[0] for i in pos_app.items_for(n)] for n, _, _ in pos_app.IFACES}
+        self.assertEqual(names["RS232"], names["USB"])
+        self.assertEqual(names["RS232"], names["BT"])
+        self.assertNotIn("텍스트 서식", names["RS232"])
+
+    def test_settings_roundtrip_and_print(self):
+        import pos_app
+        path = os.path.join(tempfile.mkdtemp(), "pos.json")
+        s = pos_app.load_settings(path)                 # 파일 없으면 기본값
+        f = Fake()
+        s["ifaces"]["RS232"]["port"] = f.path
+        pos_app.save_settings(s, path)
+        s2 = pos_app.load_settings(path)
+        self.assertEqual(s2["ifaces"]["RS232"]["port"], f.path)
+        sess = engine.Session(log=lambda m: None)
+        sess.add(make_transport("RS232", pos_app.transport_cfg(s2["ifaces"]["RS232"])))
+        try:
+            engine.act_print(sess, "RS232", "영수증")
+            time.sleep(0.5)
+        finally:
+            sess.close_all()
+        self.assertEqual((f.stats["cuts"], f.stats["errors"]), (1, []))
+
+
+class PlanTest(unittest.TestCase):
+    """145항목 계획표 ↔ 프로그램 연결."""
+
+    def test_testcases_consistent(self):
+        import testcases
+        ids = [t["id"] for t in testcases.TC]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertGreaterEqual(len(ids), 145)
+        known = {"print", "burst", "burst_pat", "reconnect", "status", "monitor", "cut", "drawer", "drawer_print",
+                 "comm", "mismatch", "speed", "devices", "x01", "x02", "x03", "aging", "info", "quick", "idle",
+                 "rapid_cut", "busy_send", "status_during", "rate", "half_cmd", "isolate"}
+        for t in testcases.TC:
+            self.assertIn(t["prio"], ("필수", "권장", "선택"), t["id"])
+            self.assertIn(t["channel"], ("RS232", "USB", "BT", "ANY", "ALL"), t["id"])
+            a = t["action"]
+            if a is None:
+                continue
+            self.assertIn(a[0], known, t["id"])
+            if a[0] in ("print", "burst_pat"):
+                self.assertIn(a[1], {**patterns.PATTERNS, **patterns.SPECIAL}, t["id"])
+            if a[0] == "burst":
+                self.assertIn(a[1], patterns.AGING_PATTERNS, t["id"])
+
+    def test_gui_handles_every_action(self):
+        """gui.py 실행 분기에 모든 action 종류가 있어야 한다 (버튼을 눌렀는데 아무 일 없는 항목 방지)."""
+        import testcases
+        with open(os.path.join(os.path.dirname(HERE), "gui.py"), encoding="utf-8") as f:
+            src = f.read()
+        for kind in {t["action"][0] for t in testcases.TC if t["action"]}:
+            self.assertIn(f'kind == "{kind}"', src, kind)
+
+    def test_export_into_plan(self):
+        import subprocess
+        import results
+        from openpyxl import load_workbook
+        d = tempfile.mkdtemp()
+        plan = os.path.join(d, "plan.xlsx")
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(HERE), "make_plan.py"), plan], check=True,
+                       capture_output=True)
+        res = results.Results(os.path.join(d, "r.json"))
+        res.set("샘플A", "F01", result="Pass", tester="홍길동", note="20/20")
+        res.set("샘플A", "BT27", result="Fail", defect="DEF-BT-01", note="굵게에서 멈춤")
+        out, n = res.export_xlsx(plan, "샘플A")
+        self.assertEqual(n, 2)
+        ws = load_workbook(out)["체크리스트"]
+        hrow, cols = results.find_columns(ws)
+        rows = {ws.cell(r, cols["id"]).value: r for r in range(hrow + 1, ws.max_row + 1)}
+        g = lambda tid, key: ws.cell(rows[tid], cols[key]).value
+        self.assertEqual((g("F01", "result"), g("F01", "done"), g("F01", "tester")), ("Pass", "✔", "홍길동"))
+        self.assertEqual((g("BT27", "result"), g("BT27", "defect")), ("Fail", "DEF-BT-01"))
+        self.assertIsNone(g("F02", "result"))
+
+
+class NewActionsTest(unittest.TestCase):
+    def setUp(self):
+        self.s = engine.Session(log=lambda m: None)
+        self.cancel = threading.Event()
+        self.f = Fake()
+        connect(self.s, "RS232", self.f)
+
+    def tearDown(self):
+        self.s.close_all()
+
+    def test_special_patterns_do_not_break_stream(self):
+        for name in patterns.SPECIAL:
+            engine.act_print(self.s, "RS232", name, self.cancel)
+        time.sleep(0.5)
+        self.assertEqual(self.f.stats["cuts"], len(patterns.SPECIAL))
+        self.assertTrue(any("쓰레기 데이터 후 복구" in t for t in self.f.stats["text"]))
+
+    def test_rapid_cut_idle_drawer_rate_half(self):
+        engine.act_rapid_cut(self.s, "RS232", 5, 0.05, self.cancel)
+        engine.act_idle_print(self.s, "RS232", 0, self.cancel)
+        engine.act_drawer_print(self.s, "RS232", self.cancel)
+        r = engine.act_transfer_rate(self.s, "RS232", 1, self.cancel)
+        self.assertIn("KB/s", r["summary"])
+        engine.act_half_command(self.s, "RS232", self.cancel, wait_s=0)
+        time.sleep(0.5)
+        self.assertGreaterEqual(self.f.stats["cuts"], 5 + 1 + 1 + 1)
+
+    def test_status_during_and_busy_send(self):
+        r = engine.act_status_during(self.s, "RS232", self.cancel)
+        self.assertIn("응답", r["summary"])
+        asked = []
+        r = engine.act_busy_send(self.s, "RS232", 3, self.cancel, lambda m: asked.append(m) or True)
+        self.assertEqual(len(asked), 2)
+        self.assertIn("3장 중 3장 전송", r["summary"])
+
+    def test_isolate_commands(self):
+        r = engine.act_isolate_commands(self.s, "RS232", self.cancel, lambda m: True)
+        self.assertEqual(r["suggest"], "PASS")
+        answers = iter([True, True, False])
+        r = engine.act_isolate_commands(self.s, "RS232", self.cancel, lambda m: next(answers))
+        self.assertEqual(r["suggest"], "FAIL")
+        self.assertIn(engine.FORMAT_COMMANDS[2][0], r["summary"])
+        time.sleep(0.5)
+        self.assertEqual(self.f.stats["errors"], [])
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class ImageFileTest(unittest.TestCase):
+    """이미지 파일 인쇄: 변환 결과와 ESC/POS 스트림 검증."""
+
+    def make(self, size, color=(0, 0, 0), mode="RGB"):
+        from PIL import Image, ImageDraw
+        im = Image.new(mode, size, (255, 255, 255, 0) if mode == "RGBA" else (255, 255, 255))
+        ImageDraw.Draw(im).rectangle((0, 0, size[0] // 2 - 1, size[1] - 1), fill=color)
+        path = os.path.join(tempfile.mkdtemp(), "t.png" if mode == "RGBA" else "t.jpg")
+        im.save(path)
+        return path
+
+    def test_convert_scales_aligns_and_inverts(self):
+        import imageprint
+        src = imageprint.load(self.make((1200, 600)))
+        bw = imageprint.convert(src, dots=576, width_pct=50, mode="logo", align="left")
+        self.assertEqual(bw.size, (576, 144))          # 50% = 288 도트, 비율 유지 600*288/1200
+        data = imageprint.to_escpos(bw, cut="partial")
+        # 첫 행: 왼쪽 144도트(18바이트) 검정 = 0xFF, 나머지 흰색 = 0x00
+        i = data.index(b"\x1dv0") + 8
+        row = data[i:i + 72]
+        self.assertEqual(row[:17], b"\xff" * 17)
+        self.assertEqual(row[19:], b"\x00" * 53)
+
+    def test_small_image_not_enlarged_and_transparent_is_white(self):
+        import imageprint
+        src = imageprint.load(self.make((100, 40), color=(0, 0, 0, 255), mode="RGBA"))
+        bw = imageprint.convert(src, dots=576, align="center")
+        self.assertEqual(bw.info["img_w"], 100)
+        self.assertEqual(bw.size, (576, 40))
+        # 투명했던 오른쪽 절반은 흰색(=인쇄 안 함)
+        self.assertEqual(bw.getpixel((238 + 75, 20)), 255)
+        self.assertEqual(bw.getpixel((238 + 10, 20)), 0)
+
+    def test_long_image_capped(self):
+        import imageprint
+        from PIL import Image
+        bw = imageprint.convert(Image.new("RGB", (576, 9000), (128, 128, 128)), dots=576)
+        self.assertEqual(bw.height, imageprint.MAX_ROWS)
+        self.assertIn("잘립니다", imageprint.info(Image.new("RGB", (576, 9000)), bw))
+
+    def test_print_through_fake_printer(self):
+        import imageprint
+        s = engine.Session(log=lambda m: None)
+        f = Fake()
+        connect(s, "RS232", f)
+        try:
+            bw = imageprint.convert(imageprint.load(self.make((800, 1000))), dots=576, mode="photo")
+            r = engine.act_image_data(s, "RS232", imageprint.to_escpos(bw), "t.jpg", threading.Event())
+            time.sleep(0.5)
+        finally:
+            s.close_all()
+        self.assertEqual(f.stats["errors"], [])
+        self.assertEqual(f.stats["cuts"], 1)
+        self.assertEqual(f.stats["rasters"], -(-bw.height // 24))
+        self.assertLessEqual(f.stats["raster_max_bytes"], 72 * 24)
+        self.assertIn("t.jpg", r["summary"])
