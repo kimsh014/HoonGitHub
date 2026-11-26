@@ -273,11 +273,24 @@
     return request('POST', '/api/menuboard/pos/key').then(function (res) { return res.key })
   }
 
+  // ── TV 목록 ──
+  // 이 매장에 붙은 TV [{ id, name, screen }]. screen은 TV가 알려 온 지금 화면 번호,
+  // 아직 알려 오지 않았으면 관리 화면에서 정한 번호, 둘 다 없으면 null. 로그인한 매장 계정만 읽을 수 있다.
+  function listDevices(storeId) {
+    return list('devices', "store='" + storeId + "'", 'name').then(function (rows) {
+      return rows.map(function (d) {
+        var screen = (d.reported && d.reported.screen) || (d.desired && d.desired.screen) || null
+        return { id: d.id, name: d.name || '', screen: screen }
+      })
+    })
+  }
+
   window.api = {
     getBoard: getBoard, onBoardChange: onBoardChange,
     signUp: signUp, login: login, session: session, logout: logout,
     saveItem: saveItem, deleteItem: deleteItem, saveSection: saveSection, deleteSection: deleteSection,
     setSoldOut: setSoldOut, saveScreens: saveScreens, saveStore: saveStore,
     callNumber: callNumber, clearCalls: clearCalls, issuePosKey: issuePosKey,
+    listDevices: listDevices,
   }
 })()
