@@ -2,7 +2,7 @@
 
 const MAX_DEVICES = 50 // 매장 하나에 붙일 수 있는 TV 수(아무나 등록해 목록을 채우지 못하게)
 const MAX_SHOT = 3 * 1024 * 1024
-const MAX_ADB_MINUTES = 240
+const MAX_ADB_MINUTES = 60 // A/S 연결은 짧게. 더 필요하면 다시 연다(점검표 R-1)
 
 function now() {
   return Math.floor(Date.now() / 1000)
@@ -20,17 +20,18 @@ function deviceByToken(app, request) {
   }
 }
 
-// 매장 계정이 자기 매장 TV만 다루게 한다.
+// 매장 계정이 자기 매장 TV만 다루게 한다. 관리자(A/S 기사, superuser)는 모든 TV를 다룬다.
 function ownDevice(app, e) {
-  const storeId = e.auth && e.auth.getString("store")
-  if (!storeId) throw new ForbiddenError("매장 계정으로 로그인해 주세요.")
+  const superuser = e.hasSuperuserAuth()
+  const storeId = !superuser && e.auth && e.auth.getString("store")
+  if (!superuser && !storeId) throw new ForbiddenError("매장 계정으로 로그인해 주세요.")
   let device
   try {
     device = app.findRecordById("devices", e.request.pathValue("id"))
   } catch (err) {
     throw new NotFoundError("TV가 없습니다.")
   }
-  if (device.getString("store") !== storeId) throw new NotFoundError("TV가 없습니다.")
+  if (!superuser && device.getString("store") !== storeId) throw new NotFoundError("TV가 없습니다.")
   return device
 }
 

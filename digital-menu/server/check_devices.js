@@ -1,7 +1,7 @@
 // TV 원격 관리(pb_hooks/devices.pb.js)를 검사한다. 사용: node check_devices.js
 // 임시 폴더로 빈 서버(127.0.0.1:8093)를 잠깐 띄워 검사하므로 켜 둔 서버(8090)는 건드리지 않는다.
 // 확인하는 것: TV 등록·보고, 토큰 없이/틀린 토큰으로 막힘, 설정 바꾸기와 검사, 재시작·캡처·A/S 연결 요청,
-// 캡처 사진 올리기, 남의 매장 TV는 못 봄, TV를 지우면 그 토큰은 못 씀.
+// 캡처 사진 올리기, 남의 매장 TV는 못 봄, TV를 지우면 그 토큰은 못 씀, A/S 연결은 A/S 관리자만 엶.
 const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
@@ -78,8 +78,11 @@ async function main() {
   // ── 재시작·캡처·A/S 연결 ──
   await ok('재시작', 'POST', `/api/menuboard/devices/${reg.id}/restart`, null, owner)
   const shotReq = await ok('캡처 요청', 'POST', `/api/menuboard/devices/${reg.id}/shot`, null, owner)
-  await fails('A/S 너무 길게', 400, 'POST', `/api/menuboard/devices/${reg.id}/adb`, { minutes: 999 }, owner)
-  await ok('A/S 열기', 'POST', `/api/menuboard/devices/${reg.id}/adb`, { minutes: 60 }, owner)
+  // A/S 연결은 A/S 관리자(superuser)만 열고(최대 60분), 사장님 계정은 잠그기만 한다(점검표 R-1)
+  const asAdmin = auth((await ok('A/S 관리자 로그인', 'POST', '/api/collections/_superusers/auth-with-password', { identity: 'admin@menu.test', password: 'password-1234' })).token)
+  await fails('사장님 계정으로 A/S 열기', 403, 'POST', `/api/menuboard/devices/${reg.id}/adb`, { minutes: 30 }, owner)
+  await fails('A/S 너무 길게', 400, 'POST', `/api/menuboard/devices/${reg.id}/adb`, { minutes: 61 }, asAdmin)
+  await ok('A/S 열기', 'POST', `/api/menuboard/devices/${reg.id}/adb`, { minutes: 60 }, asAdmin)
   o = await ok('보고', 'POST', '/api/menuboard/devices/report', {}, tv)
   assert.strictEqual(o.restartRev, 1)
   assert.strictEqual(o.shotRev, 1)
@@ -108,7 +111,7 @@ async function main() {
   const stranger = auth(otherLogin.token)
   assert.strictEqual((await ok('남의 목록', 'GET', '/api/collections/devices/records', null, stranger)).items.length, 0)
   await fails('남의 TV 설정', 404, 'POST', `/api/menuboard/devices/${reg.id}/config`, { screen: 1 }, stranger)
-  await fails('남의 TV A/S 열기', 404, 'POST', `/api/menuboard/devices/${reg.id}/adb`, { minutes: 10 }, stranger)
+  await fails('남의 TV A/S 잠그기', 404, 'POST', `/api/menuboard/devices/${reg.id}/adb`, { minutes: 0 }, stranger)
   await fails('매장이 둘일 때 번호 없이 등록', 400, 'POST', '/api/menuboard/devices/register', {})
   const reg2 = await ok('매장 번호로 등록', 'POST', '/api/menuboard/devices/register', { store: other.id, name: '입구' })
   assert.strictEqual(reg2.store, other.id)

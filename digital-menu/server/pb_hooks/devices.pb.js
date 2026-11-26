@@ -74,7 +74,7 @@ routerAdd("POST", "/api/menuboard/devices/{id}/config", (e) => {
   device.set("rev", device.getInt("rev") + 1)
   e.app.save(device)
   return e.json(200, { rev: device.getInt("rev"), desired: desired })
-}, $apis.requireAuth("users"))
+}, $apis.requireAuth("users", "_superusers"))
 
 // 메뉴판 앱 다시 켜기
 routerAdd("POST", "/api/menuboard/devices/{id}/restart", (e) => {
@@ -83,7 +83,7 @@ routerAdd("POST", "/api/menuboard/devices/{id}/restart", (e) => {
   device.set("restart_rev", device.getInt("restart_rev") + 1)
   e.app.save(device)
   return e.json(200, { restartRev: device.getInt("restart_rev") })
-}, $apis.requireAuth("users"))
+}, $apis.requireAuth("users", "_superusers"))
 
 // 지금 TV 화면 캡처 요청. 15초 안팎 뒤 devices.shot 에 사진이 올라온다(shot_at 이 바뀜).
 routerAdd("POST", "/api/menuboard/devices/{id}/shot", (e) => {
@@ -92,9 +92,11 @@ routerAdd("POST", "/api/menuboard/devices/{id}/shot", (e) => {
   device.set("shot_rev", device.getInt("shot_rev") + 1)
   e.app.save(device)
   return e.json(200, { shotRev: device.getInt("shot_rev"), shotAt: device.getInt("shot_at") })
-}, $apis.requireAuth("users"))
+}, $apis.requireAuth("users", "_superusers"))
 
-// A/S 연결(네트워크 ADB) 열기·닫기. 본문: { "minutes": 60 } (0이면 바로 잠금). 시간이 지나면 TV가 스스로 잠근다.
+// A/S 연결(네트워크 ADB) 열기·닫기. 본문: { "minutes": 30 } (0이면 바로 잠금). 시간이 지나면 TV가 스스로 잠근다.
+// 열기는 A/S 관리자(superuser)만, 잠그기는 매장 계정도 된다(점검표 R-1: 사장님 비밀번호는 직원과 공유되기 쉽고
+// 매장 와이파이로 암호화 없이 오가므로, 그것만으로 TV를 같은 망의 누구나 쓸 수 있게 열지 못하게).
 routerAdd("POST", "/api/menuboard/devices/{id}/adb", (e) => {
   const lib = require(`${__hooks}/devices_lib.js`)
   const device = lib.ownDevice(e.app, e)
@@ -102,7 +104,10 @@ routerAdd("POST", "/api/menuboard/devices/{id}/adb", (e) => {
   if (typeof minutes !== "number" || minutes % 1 !== 0 || minutes < 0 || minutes > lib.MAX_ADB_MINUTES) {
     throw new BadRequestError("A/S 연결은 0~" + lib.MAX_ADB_MINUTES + "분까지 열 수 있습니다.")
   }
+  if (minutes > 0 && !e.hasSuperuserAuth()) {
+    throw new ForbiddenError("A/S 연결은 A/S 관리자 계정으로만 열 수 있습니다.")
+  }
   device.set("adb_until", minutes ? lib.now() + minutes * 60 : 0)
   e.app.save(device)
   return e.json(200, { adbSeconds: lib.orders(device).adbSeconds })
-}, $apis.requireAuth("users"))
+}, $apis.requireAuth("users", "_superusers"))

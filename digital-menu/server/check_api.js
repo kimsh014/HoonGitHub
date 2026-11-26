@@ -200,17 +200,22 @@ async function main() {
     await changed('clearCalls 전체', () => api.clearCalls(sid))
     assert.deepStrictEqual((await api.getBoard()).calls, [])
 
-    // 구역을 지우면 그 구역의 메뉴도 지워지고, 화면 구성에서도 빠진다
-    await api.saveItem(sid, { sectionId, name: '같이지워질메뉴', prices: [{ label: null, amount: 1 }], order: 100, badge: null })
+    // 메뉴가 있는 구역은 지우지 못한다(메뉴까지 같이 지워지는 사고 막기). 메뉴를 지우면 구역을 지울 수 있고, 화면 구성에서도 빠진다
+    const doomed = await api.saveItem(sid, { sectionId, name: '남은메뉴', prices: [{ label: null, amount: 1 }], order: 100, badge: null })
+    await assert.rejects(api.deleteSection(sid, sectionId), (e) => e.status === 400 && /메뉴 1개/.test(e.message), '메뉴가 있는 구역 지우기는 400')
+    await api.deleteItem(sid, doomed)
     await changed('deleteSection', () => api.deleteSection(sid, sectionId))
     board = await api.getBoard()
-    assert.ok(!board.sections.some((s) => s.id === sectionId) && !board.items.some((m) => m.name === '같이지워질메뉴'))
+    assert.ok(!board.sections.some((s) => s.id === sectionId) && !board.items.some((m) => m.name === '남은메뉴'))
     assert.deepStrictEqual(board.screens[0].sectionIds, [])
   } finally {
-    // 샘플 매장을 처음 모양으로. 검사 중간에 실패했어도 검사가 더한 구역(과 그 메뉴)을 지운다.
+    // 샘플 매장을 처음 모양으로. 검사 중간에 실패했어도 검사가 더한 구역과 그 메뉴를 지운다.
     // 화면 4는 빠지며 지워지고, 3의 홍보 이미지는 imageUrl: null 이라 지워진다
-    for (const s of (await api.getBoard(sid)).sections) {
-      if (!original.sections.some((o) => o.id === s.id)) await api.deleteSection(sid, s.id)
+    const now = await api.getBoard(sid)
+    for (const s of now.sections) {
+      if (original.sections.some((o) => o.id === s.id)) continue
+      for (const m of now.items) if (m.sectionId === s.id) await api.deleteItem(sid, m.id)
+      await api.deleteSection(sid, s.id)
     }
     await api.saveScreens(sid, original.screens)
     await api.saveStore(sid, { name: original.store.name, brandColor: original.store.brandColor, backgroundUrl: null })

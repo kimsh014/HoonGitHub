@@ -29,3 +29,18 @@ routerAdd("POST", "/api/menuboard/pos/items", (e) => {
   const body = e.requestInfo().body
   return e.json(200, { items: pos.applyUpdates(e.app, store, body.items) })
 })
+
+// 번호 호출(키패드 앱). 매장 계정 로그인 대신 연동 키를 써서 로그인 만료(B-12)와 상관없이 부른다.
+// 이 매장이 지금 TV에 띄운 번호들(최근 것부터)
+routerAdd("GET", "/api/menuboard/pos/calls", (e) => {
+  const pos = require(`${__hooks}/pos_lib.js`)
+  const store = pos.storeByKey(e.app, e.request)
+  return e.json(200, { store: { id: store.id, name: store.getString("name") }, calls: pos.listCalls(e.app, store) })
+})
+
+// 본문: { "number": 123, "action": "call" | "recall" | "cancel" }  (action을 빼면 call)
+routerAdd("POST", "/api/menuboard/pos/calls", (e) => {
+  const pos = require(`${__hooks}/pos_lib.js`)
+  const store = pos.storeByKey(e.app, e.request)
+  return e.json(200, pos.applyCall(e.app, store, e.requestInfo().body))
+})

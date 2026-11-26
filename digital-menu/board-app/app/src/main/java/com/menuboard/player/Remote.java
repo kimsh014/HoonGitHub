@@ -20,6 +20,9 @@ import java.nio.charset.StandardCharsets;
  * 할 일(설정 바꾸기·재시작·캡처·A/S 연결)을 받는다. 모두 백그라운드 스레드에서 부른다.
  */
 final class Remote {
+    /** A/S 연결(네트워크 ADB)을 한 번에 열 수 있는 최대 시간(분). 서버 devices_lib.js의 MAX_ADB_MINUTES와 같다. */
+    static final int MAX_ADB_MINUTES = 60;
+
     private static final String TAG = "MenuBoard";
 
     private Remote() {}
@@ -58,7 +61,8 @@ final class Remote {
             o.rev = j.optInt("rev");
             o.restartRev = j.optInt("restartRev");
             o.shotRev = j.optInt("shotRev");
-            o.adbSeconds = j.optLong("adbSeconds");
+            // 서버가 무엇을 보내든 A/S 연결은 최대 60분만 연다(가짜 서버가 오래 열지 못하게, 점검표 R-7)
+            o.adbSeconds = Math.max(0, Math.min(MAX_ADB_MINUTES * 60L, j.optLong("adbSeconds")));
             o.desired = j.optJSONObject("desired");
             if (o.desired == null) o.desired = new JSONObject();
             return o;
