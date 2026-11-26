@@ -49,7 +49,7 @@ POS PC (Windows)                               안드로이드 보드 → 35~66�
      ```
    - A/S 관리자(PocketBase superuser) `as@poswing.local`을 설치마다 무작위 24자 비밀번호로 `superuser create`. 이미 있으면 그대로 두고, `install-server.bat --reset`일 때만 `superuser upsert`로 새로 만듭니다. 비밀번호는 화면과 `server/AS-관리자-비밀번호.txt`(Administrators·SYSTEM만 읽기)에 나옵니다. A/S 기록에 옮기고 파일은 지웁니다.
    - 방화벽: 그룹 `MenuBoard`로 TCP 8090 들어오기 규칙과 `pocketbase.exe` 프로그램 규칙(모든 프로필, 원격 주소 `LocalSubnet`). Windows가 저절로 만든 `pocketbase.exe` 규칙(차단 포함)은 지우고 다시 만듭니다.
-   - `powercfg`로 AC 절전·최대 절전·디스크 끄기 0, 빠른 시작 끄기(물음), Windows 업데이트 사용 시간 8~24시(레지스트리, Home 에디션은 안 먹을 수 있음), Defender 예외(실패해도 계속).
+   - `powercfg`로 AC 절전·최대 절전·디스크 끄기 0, 빠른 시작 끄기(물음), Windows 업데이트 사용 시간 7~24시(레지스트리, Home 에디션은 안 먹을 수 있음), Defender 예외(실패해도 계속).
    - 제거: `server/uninstall-server.bat`(작업·방화벽·Defender 예외만 지우고 `pb_data`는 남김).
 3. **개발·점검용**: `server/start-server.bat`은 같은 명령을 콘솔 창에서 돌립니다(창을 닫으면 꺼짐). `MenuBoardServer`가 설치돼 있거나 8090이 이미 쓰이면 경고합니다. 먼저 `schtasks /end /tn MenuBoardServer`.
 4. 수정 화면: `http://127.0.0.1:8090/admin.html`. 빈 서버에서는 여기서 첫 매장과 계정을 만듭니다.

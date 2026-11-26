@@ -12,8 +12,8 @@ param(
 $TaskName         = 'MenuBoardServer'
 $Port             = 8090
 $AsEmail          = 'as@poswing.local'   # A/S용 PocketBase 관리자 이메일(모든 매장 같음, 비밀번호는 설치마다 다름)
-$ActiveHoursStart = 8                    # Windows 업데이트가 재부팅하지 않는 시간(영업 시간) 시작
-$ActiveHoursEnd   = 0                    # 끝(0 = 밤 12시). 시작~끝은 18시간 이하여야 한다.
+$ActiveHoursStart = 7                    # Windows 업데이트가 재부팅하지 않는 시간(영업 시간) 시작
+$ActiveHoursEnd   = 0                    # 끝(0 = 밤 12시). 시작~끝은 18시간 이하여야 한다(7~24시 = 17시간).
 $FirewallGroup    = 'MenuBoard'
 $PbVersion        = '0.40.6'
 # -------------------------
@@ -230,7 +230,11 @@ try {
     Set-ItemProperty -Path $pol -Name SetActiveHours -Value 1 -Type DWord
     Set-ItemProperty -Path $pol -Name ActiveHoursStart -Value $ActiveHoursStart -Type DWord
     Set-ItemProperty -Path $pol -Name ActiveHoursEnd -Value $ActiveHoursEnd -Type DWord
-    Ok "업데이트 활성 시간 $ActiveHoursStart 시 ~ $(if ($ActiveHoursEnd -eq 0) { 24 } else { $ActiveHoursEnd }) 시(이 시간에는 업데이트로 다시 시작하지 않음. Home 에디션은 적용 안 될 수 있음)."
+    # 사장님이 로그인해 있는 동안(영업 중)에는 업데이트가 스스로 다시 시작하지 않게(Windows 10 Pro 정책, 점검표 B-17)
+    $au = Join-Path $pol 'AU'
+    New-Item -Path $au -Force | Out-Null
+    Set-ItemProperty -Path $au -Name NoAutoRebootWithLoggedOnUsers -Value 1 -Type DWord
+    Ok "업데이트 활성 시간 $ActiveHoursStart 시 ~ $(if ($ActiveHoursEnd -eq 0) { 24 } else { $ActiveHoursEnd }) 시(이 시간과 로그인해 있는 동안에는 업데이트로 다시 시작하지 않음)."
 } catch {
     Warn "업데이트 활성 시간을 넣지 못했습니다: $($_.Exception.Message)"
 }
