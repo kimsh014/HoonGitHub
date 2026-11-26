@@ -154,7 +154,7 @@ function Http([string]$method, [string]$path, $body = $null, [int]$timeout = 10,
     try {
         $p = @{ Uri = $url; Method = $method; Headers = $headers; TimeoutSec = $timeout; UseBasicParsing = $true }
         if ($null -ne $body) {
-            $p['Body'] = $Utf8.GetBytes(($body | ConvertTo-Json -Depth 6 -Compress))
+            $p['Body'] = AsciiJson $body
             $p['ContentType'] = 'application/json; charset=utf-8'
         }
         if ($OutFile) { $p['OutFile'] = $OutFile; $p['PassThru'] = $true }
@@ -186,6 +186,13 @@ function Http([string]$method, [string]$path, $body = $null, [int]$timeout = 10,
     }
     if ($res.date) { $script:ClockOffset = [int64]($res.date.ToUnixTimeSeconds() - (UnixNow)) }
     return $res
+}
+
+# Windows PowerShell 5.1은 byte[] 본문을 숫자 목록으로 보내고, 문자열 본문의 한글을 깨뜨릴 수 있어
+# JSON의 ASCII 밖 글자를 \uXXXX 로 바꿔 순수 ASCII 문자열로 보낸다.
+function AsciiJson($o) {
+    $j = $o | ConvertTo-Json -Depth 6 -Compress
+    return [regex]::Replace($j, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
 }
 
 function ServerNow { return (UnixNow) + $script:ClockOffset }

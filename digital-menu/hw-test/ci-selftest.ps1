@@ -35,7 +35,8 @@ $up = $false
 for ($i = 0; $i -lt 40; $i++) { try { $null = Invoke-WebRequest "$base/api/health" -UseBasicParsing -TimeoutSec 2; $up = $true; break } catch { Start-Sleep -Milliseconds 500 } }
 if (-not $up) { Write-Host '서버가 뜨지 않음' -ForegroundColor Red; exit 1 }
 
-function J($o) { return [Text.Encoding]::UTF8.GetBytes(($o | ConvertTo-Json -Depth 5 -Compress)) }
+# Windows PowerShell 5.1은 byte[] 본문을 숫자 목록으로 보낸다. ASCII 밖 글자는 \uXXXX 로 바꾼 문자열로 보낸다.
+function J($o) { $j = $o | ConvertTo-Json -Depth 5 -Compress; return [regex]::Replace($j, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value }) }
 try {
     $null = Invoke-RestMethod "$base/api/menuboard/setup" -Method Post -ContentType 'application/json; charset=utf-8' -Body (J @{ storeName = '시험매장'; email = 'owner@menu.test'; password = 'password-1234' })
     $reg = Invoke-RestMethod "$base/api/menuboard/devices/register" -Method Post -ContentType 'application/json; charset=utf-8' -Body (J @{ name = 'CI TV'; model = 'ci-rk3568'; version = '1.1' })
@@ -50,17 +51,19 @@ Write-Host "  매장·가짜 TV 만듦 ($($reg.id))"
 $tv = Start-Job -ArgumentList $base, $reg.token -ScriptBlock {
     param($base, $token)
     $jpg = [Convert]::FromBase64String('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=')
+    $jpgFile = Join-Path $env:TEMP 'hwtest-shot.jpg'
+    [IO.File]::WriteAllBytes($jpgFile, $jpg)
     $h = @{ 'X-Device-Token' = $token }
     $lastShot = $null
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while ($sw.Elapsed.TotalMinutes -lt 10) {
         try {
             $body = @{ version = '1.1'; model = 'ci-rk3568'; reported = @{ server = '127.0.0.1'; screen = 1; zoom = 100; rotation = 0; brightness = -1; adb = $false; canAdb = $true; rev = 0; usb = ''; note = ''; width = 1920; height = 1080 } }
-            $o = Invoke-RestMethod "$base/api/menuboard/devices/report" -Method Post -Headers $h -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 5 -Compress)))
+            $o = Invoke-RestMethod "$base/api/menuboard/devices/report" -Method Post -Headers $h -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 5 -Compress)
             if ($null -eq $lastShot) { $lastShot = $o.shotRev }
             elseif ($o.shotRev -gt $lastShot) {
                 $lastShot = $o.shotRev
-                $null = Invoke-RestMethod "$base/api/menuboard/devices/shot" -Method Post -Headers $h -ContentType 'image/jpeg' -Body $jpg
+                $null = Invoke-RestMethod "$base/api/menuboard/devices/shot" -Method Post -Headers $h -ContentType 'image/jpeg' -InFile $jpgFile
             }
         } catch { }
         Start-Sleep -Seconds 2
