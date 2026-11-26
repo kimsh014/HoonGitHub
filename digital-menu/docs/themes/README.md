@@ -37,7 +37,7 @@ UI팀은 코드를 고치지 않고 **테마 파일 하나**(`server/pb_public/t
 |---|---|
 | `server/pb_public/themes/<새 이름>.css` | ✅ 새로 만듦 |
 | `server/pb_public/themes/list.json` | ✅ 한 줄 더함 |
-| `server/pb_public/themes/<그림 파일>` (바탕 무늬 등) | ✅ 더함 (한 장 300KB 이하 권장) |
+| `server/pb_public/themes/<그림 파일>` (바탕 무늬 등) | ✅ 더함 (한 장 300KB 이하, 검사가 막음) |
 | `docs/themes/` 안내·스크린샷 | ✅ 고침 |
 | `server/pb_public/index.html` | ❌ 개발팀 (배치·테마 값 목록) |
 | `server/pb_public/api.js`, `board.js` | ❌ 개발팀 (서버 연결) |

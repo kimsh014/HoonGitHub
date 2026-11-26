@@ -238,8 +238,9 @@ function img(src) {
 
 // 브랜드 색 위 글자색: 흰색과 검은색 중 대비가 큰 쪽 (사장님이 노랑 같은 밝은 색을 골라도 글이 보이게)
 function onColor(hex) {
-  var m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim())
+  var m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(String(hex).trim())
   if (!m) return '#fff'
+  if (m[1].length === 3) m[1] = m[1].replace(/./g, '$&$&') // #fd0 → #ffdd00
   var lum = [0, 2, 4].map(function (i) {
     var c = parseInt(m[1].substr(i, 2), 16) / 255
     return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
@@ -431,7 +432,8 @@ function renderBoard(board, screenNo) {
   var bg = document.getElementById('bg')
   var top = document.getElementById('top')
 
-  var brand = board.store.brandColor || '#c8102e'
+  // 브랜드 색은 #rrggbb(또는 #rgb)만 받는다. 다른 값(url() 등)이 오면 기본 빨강 (테마의 --glow·띠에도 들어가므로)
+  var brand = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(board.store.brandColor || '') ? board.store.brandColor : '#c8102e'
   document.documentElement.style.setProperty('--brand', brand)
   document.documentElement.style.setProperty('--on-brand', onColor(brand))
   setTheme(URL_THEME || board.store.theme) // store.theme은 계약 추가 제안. 아직 없으면 주소의 theme 또는 기본

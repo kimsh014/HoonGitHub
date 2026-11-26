@@ -20,7 +20,8 @@
 2. 파일 안에는 주석과 `:root { --값: …; }` 한 덩어리만 쓴다. `.card {…}` 같은 다른 선택자, `@import`, `@font-face`, `@media`는 쓰지 않는다.
 3. 아래 "테마 값" 목록에 있는 변수만 바꾼다. `--brand`, `--on-brand`, `--zoom`, `--fit`, `--pad`는 바꾸지 않는다. 바꾸지 않은 값은 기본값을 쓴다.
 4. 크기는 `em`·`rem`만 쓴다(`px` 금지). 글자 크기·여백·위치는 테마 값에 없으므로 바꿀 수 없다.
-5. `url()`은 `themes/` 폴더 안의 그림 파일만(예: `url(dots.png)`). 바깥 인터넷 주소의 그림·글꼴은 쓰지 않는다(매장 인터넷이 끊겨도 보여야 한다).
+5. `url()`은 `themes/` 폴더 안의 그림 파일만(예: `url(dots.png)`, 한 장 300KB 이하). 바깥 인터넷 주소의 그림·글꼴, `\` 이스케이프는 쓰지 않는다(매장 인터넷이 끊겨도 보여야 한다).
+   함수는 var, rgb, rgba, hsl, hsla, linear-gradient, radial-gradient, repeating-linear-gradient, repeating-radial-gradient, url, calc만 쓴다.
 6. 글꼴: 보드에는 Noto Sans CJK만 있고 확실한 굵기는 400과 700뿐이다. 다른 글꼴이 필요하면 만들지 말고 나에게 "개발팀 요청"으로 알려 준다.
 7. 글자색과 바탕색이 둘 다 `#rrggbb` 고정 색인 짝(--ink/--base, --ink/--panel, --top-ink/--top-bg, --title-ink/--title-bg, --band-ink/--band-bg, --call-ink/--call-bg, --sold-ink/--sold-bg, NEW·BEST 딱지)은 명도 대비 4.5 이상.
 8. 밝은 바탕 테마면 `--ink`, `--muted`, `--veil`(매장 배경 사진 위 막), `--band-*`, `--hot`·`--ice`도 어두운 글에 맞게 함께 바꾼다.

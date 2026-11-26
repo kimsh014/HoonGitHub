@@ -4,9 +4,10 @@
 //  1. themes/list.json의 테마마다 같은 이름의 .css 파일이 있고, 이름은 영어 소문자·숫자·- 만 (주소에 들어감)
 //  2. 테마 파일은 :root { --이름: 값; } 한 덩어리만. 다른 선택자·@import·<script> 없음 (배치는 개발팀 몫)
 //  3. 바꾸는 변수는 index.html의 "테마 값" 블록에 있는 것만 (--brand, --on-brand, --zoom, --fit, --pad는 못 바꿈)
-//  4. url()은 themes/ 폴더 안의 파일만 (매장 인터넷이 끊겨도 보이게, 바깥 주소로 손님 화면이 새지 않게)
+//  4. url()은 themes/ 폴더 안의 파일만 (매장 인터넷이 끊겨도 보이게, 바깥 주소로 손님 화면이 새지 않게).
+//     주소 모양(//, http:)·이스케이프(\)·정해진 함수 밖(image-set 등)은 모두 실패
 //  5. 글자색과 바탕색이 둘 다 고정 색(#rrggbb)인 짝은 명도 대비 4.5 이상 (천장 TV를 멀리서 읽음)
-//  6. 파일 크기 20KB 이하
+//  6. 파일 크기 20KB 이하, url()로 쓰는 그림은 한 장 300KB 이하
 const fs = require('fs')
 const path = require('path')
 
@@ -15,6 +16,7 @@ const DIR = path.join(PUBLIC, 'themes')
 const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8')
 const block = html.split('테마 값: themes/*.css는')[1].split('테마 값 끝')[0]
 const ALLOWED = new Set(block.match(/--[a-z0-9-]+(?=\s*:)/g))
+const FUNCS = new Set(['var', 'rgb', 'rgba', 'hsl', 'hsla', 'linear-gradient', 'radial-gradient', 'repeating-linear-gradient', 'repeating-radial-gradient', 'url', 'calc'])
 const PAIRS = [ // [글자, 바탕]
   ['--ink', '--base'], ['--ink', '--panel'], ['--top-ink', '--top-bg'], ['--title-ink', '--title-bg'],
   ['--band-ink', '--band-bg'], ['--call-ink', '--call-bg'], ['--sold-ink', '--sold-bg'],
@@ -57,10 +59,16 @@ for (const t of list) {
     const d = /^(--[a-z0-9-]+)\s*:\s*([\s\S]+)$/.exec(decl)
     if (!d) { bad(t.id, '변수가 아닌 줄: ' + decl.slice(0, 40)); continue }
     if (!ALLOWED.has(d[1])) bad(t.id, d[1] + '는 테마가 바꿀 수 없는 값 (index.html의 테마 값 목록 참고)')
+    // 바깥 주소를 숨겨 넣는 길을 막는다: 이스케이프(\\), 주소 모양, 허용 목록에 없는 함수(image-set 등)
+    if (/\\|[a-z]+:\/\/|\/\//i.test(d[2])) bad(t.id, d[1] + ': 바깥 주소나 이스케이프(\\)는 쓸 수 없음')
+    for (const fn of d[2].match(/[a-z-]+(?=\()/gi) || []) {
+      if (!FUNCS.has(fn.toLowerCase())) bad(t.id, d[1] + ': ' + fn + '()는 쓸 수 없음 (쓸 수 있는 것: ' + [...FUNCS].join(', ') + ')')
+    }
     for (const u of d[2].match(/url\(([^)]*)\)/gi) || []) {
       const p = u.slice(4, -1).trim().replace(/^['"]|['"]$/g, '')
       if (/^[a-z]+:|^\/\/|^\/|\.\./i.test(p)) bad(t.id, 'url()은 themes/ 안의 파일만: ' + p)
       else if (!fs.existsSync(path.join(DIR, p))) bad(t.id, 'url() 파일이 없음: themes/' + p)
+      else if (fs.statSync(path.join(DIR, p)).size > 300000) bad(t.id, '그림이 300KB보다 큼 (TV 메모리·저장 화면): themes/' + p)
     }
     vars[d[1]] = d[2].trim()
   }
