@@ -44,7 +44,8 @@ B. 수정 화면 일곱 개 (매장 POS의 큰 화면과 폰 화면 모두에서
     { "no": 3, "type": "promo", "imageUrl": "https://example.com/promo.jpg", "lines": ["첫 줄", "둘째 줄"], "callBand": false },
     { "no": 4, "type": "calls" }
   ],
-  "calls": [107, 106, 105]
+  "calls": [107, 106, 105],
+  "lastCallAt": 1795651200000
 }
 ```
 - prices는 한 개 또는 두 개. 한 개면 label은 null.
@@ -52,6 +53,7 @@ B. 수정 화면 일곱 개 (매장 POS의 큰 화면과 폰 화면 모두에서
 - posCode는 POS 상품 코드(없으면 null). TV 화면에는 보이지 않고, 수정 화면에서 넣고 고친다.
 - type은 "grid"(사진 격자형), "list"(목록 + 큰 사진형), "promo"(홍보 화면), "calls"(번호 전용 화면).
 - calls는 직원이 부른 번호(1~9999). 가장 최근에 부른 번호가 맨 앞이고, 최대 30개까지 온다.
+- lastCallAt은 calls 맨 앞 번호를 부른 시각(밀리초, 번호가 없으면 null). 직원이 같은 번호를 '다시 부르기'하면 calls는 그대로이고 이 값만 바뀐다. 화면은 맨 앞 번호나 이 값이 바뀌면 새 번호로 보고 강조(깜빡임)한다.
 - callBand가 true인 화면(grid·list·promo)은 아래쪽에 번호 띠를 붙인다. calls 화면에는 callBand가 없다.
 
 # 계약 2: 화면이 부르는 api.js 함수 (모두 Promise를 돌려준다)

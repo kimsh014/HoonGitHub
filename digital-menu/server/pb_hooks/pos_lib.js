@@ -145,4 +145,60 @@ function applyUpdates(app, store, updates) {
   return changedIds.map((id) => byId[id])
 }
 
-module.exports = { storeByKey, listItems, applyUpdates }
+// ── 번호 호출 (키패드 앱) ──
+// 번호표는 판매 프로그램·키오스크가 이미 찍는 주문번호를 그대로 쓴다. 직원이 키패드로 번호+Enter를 치면 TV에 띄운다.
+// 부른 번호는 calls 컬렉션(매장마다 최근 30개, 10분 뒤 자동으로 빠짐)에 들어가고 TV는 실시간 구독으로 바로 그린다.
+// 가맹점도 자기 매장 번호를 부른다(메뉴처럼 본사 것을 쓰지 않는다).
+const CALL_MIN = 1
+const CALL_MAX = 9999
+const SAME_CALL_SECONDS = 3 // 같은 번호를 이 안에 또 부르면 한 번으로 친다(M-15, 키 두 번 눌림·재전송)
+
+function callAt(row) {
+  return new Date(String(row.getString("created")).replace(" ", "T")).getTime()
+}
+
+// 이 매장이 부른 번호들. 최근 것부터. at은 부른 시각(ms).
+function listCalls(app, store) {
+  return app.findRecordsByFilter("calls", "store = {:s}", "-created", 30, 0, { s: store.id })
+    .map((r) => ({ number: r.getInt("number"), at: callAt(r) }))
+}
+
+function checkNumber(n) {
+  if (typeof n === "string" && /^\d{1,4}$/.test(n.trim())) n = Number(n.trim())
+  if (typeof n !== "number" || n % 1 !== 0 || n < CALL_MIN || n > CALL_MAX) {
+    throw new BadRequestError("번호는 " + CALL_MIN + "~" + CALL_MAX + " 사이의 정수여야 합니다.")
+  }
+  return n
+}
+
+// action: "call"(기본) 번호 부르기 · "recall" 다시 부르기(이미 있어도 맨 앞으로, TV가 다시 깜빡임) · "cancel" 화면에서 빼기
+// retry: true면 못 보낸 번호를 다시 보내는 것. 응답만 늦었고 서버는 이미 받았을 수 있으니, 그 번호가 TV에 있으면 다시 띄우지 않는다.
+// 돌려주는 것: { number, action, result: "called" | "ignored" | "removed" | "absent", calls: [...] }
+function applyCall(app, store, body) {
+  body = body || {}
+  const action = body.action == null || body.action === "" ? "call" : String(body.action)
+  if (["call", "recall", "cancel"].indexOf(action) < 0) throw new BadRequestError("action은 call, recall, cancel 중 하나여야 합니다.")
+  const number = checkNumber(body.number)
+  let result = ""
+  app.runInTransaction((tx) => {
+    const rows = tx.findRecordsByFilter("calls", "store = {:s} && number = {:n}", "", 10, 0, { s: store.id, n: number })
+    if (action === "cancel") {
+      rows.forEach((r) => tx.delete(r))
+      result = rows.length ? "removed" : "absent"
+      return
+    }
+    if (action !== "cancel" && rows.length && (body.retry === true || (action === "call" && Date.now() - callAt(rows[0]) < SAME_CALL_SECONDS * 1000))) {
+      result = "ignored"
+      return
+    }
+    rows.forEach((r) => tx.delete(r)) // (store, number)는 하나만 있을 수 있다. 지우고 새로 넣어 맨 앞으로.
+    const row = new Record(tx.findCollectionByNameOrId("calls"))
+    row.set("store", store.id)
+    row.set("number", number)
+    tx.save(row)
+    result = "called"
+  })
+  return { number: number, action: action, result: result, calls: listCalls(app, store) }
+}
+
+module.exports = { storeByKey, listItems, applyUpdates, listCalls, applyCall, SAME_CALL_SECONDS }

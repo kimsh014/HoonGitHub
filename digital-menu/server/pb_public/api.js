@@ -150,6 +150,8 @@
                 : { no: s.no, type: s.type, sectionIds: s.sections, callBand: s.call_band }
             }),
             calls: r[4].map(function (c) { return c.number }), // 최근에 부른 번호부터, 최대 30개
+            // 맨 앞 번호를 부른 시각(ms). 같은 번호를 '다시 부르기'해도 값이 바뀌어 화면이 다시 깜빡인다. 없으면 null.
+            lastCallAt: r[4].length ? Date.parse(String(r[4][0].created).replace(' ', 'T')) || null : null,
           }
         })
       })

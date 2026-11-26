@@ -306,13 +306,13 @@ function tvsOn(no) {
 function drawPos() {
   var shown = el('input', { readOnly: true, size: 50, placeholder: '키를 만들면 여기에 한 번만 나옵니다' })
   var make = button('새 연동 키 만들기', function () {
-    if (!confirm('새 키를 만들면 예전 키를 쓰던 POS·키오스크는 연결이 끊깁니다. 만들까요?')) return
+    if (!confirm('새 키를 만들면 예전 키를 쓰던 POS·키오스크와 POS기의 번호 호출 키패드가 모두 끊깁니다.\n새 키를 그 기기들에 다시 넣어야 합니다. 만들까요?')) return
     make.disabled = true
     api.issuePosKey(me.storeId).then(function (key) {
       make.disabled = false
       shown.value = key
       shown.select()
-      say('연동 키를 만들었습니다. 지금 복사해 POS·키오스크 설정에 넣어 주세요.')
+      say('연동 키를 만들었습니다. 지금 복사해 POS·키오스크와 번호 호출 키패드 설정에 넣어 주세요.')
     }).catch(function (err) { make.disabled = false; say('실패: ' + err.message) })
   })
   fill($('pos'), [el('div', { className: 'row' }, [make, shown]),
