@@ -76,6 +76,7 @@ public class MainActivity extends Activity {
     private final Runnable longOk = this::openSettings;
     private final Runnable report = this::reportTick;
     private final Runnable checkUsb = this::checkUsb;
+    private final Runnable adbDeadline = this::enforceAdb;
 
     // ponytail: 시간 지연만으로 사진 로드를 기다린다. 사진이 아주 많아 3초를 넘기면 일부가 빠진 채 저장될 수 있음 — 웹 화면이 사진 로드 완료 후 rendered()를 부르게 바꾸면 해결.
     private final Runnable saveArchive = () -> {
@@ -515,7 +516,7 @@ public class MainActivity extends Activity {
         if (prefs.getInt("shotRev", -1) < 0) prefs.edit().putInt("shotRev", o.shotRev).commit();
 
         // A/S 연결: 서버가 닿으면 서버가 정한 마감을 따른다
-        prefs.edit().putLong("adbUntil", System.currentTimeMillis() + o.adbSeconds * 1000).apply();
+        Remote.setAdbWindow(this, o.adbSeconds);
         enforceAdb();
 
         if (o.rev > prefs.getInt("appliedRev", 0)) applyDesired(o.desired, o.rev, server);
@@ -586,7 +587,11 @@ public class MainActivity extends Activity {
 
     /** A/S 연결(ADB)은 마감 시각 전에만 켠다. 권한이 없으면 손대지 않는다. */
     private void enforceAdb() {
-        Remote.setAdb(this, System.currentTimeMillis() < prefs.getLong("adbUntil", 0));
+        long left = Remote.adbLeftMs(this);
+        Remote.setAdb(this, left > 0);
+        // 마감 때 꼭 잠근다. 설정 화면이 떠 있어 보고가 멈춘 동안에도(onPause 에서 지우지 않음)
+        main.removeCallbacks(adbDeadline);
+        if (left > 0) main.postDelayed(adbDeadline, left + 1000);
     }
 
     // ── USB 설정 파일 (현장 비상용) ──
@@ -652,7 +657,7 @@ public class MainActivity extends Activity {
             try {
                 int min = Integer.parseInt(m.get("as"));
                 if (min < 0 || min > 240) throw new NumberFormatException();
-                prefs.edit().putLong("adbUntil", System.currentTimeMillis() + min * 60_000L).apply();
+                Remote.setAdbWindow(this, min * 60L);
                 done.add(min == 0 ? "A/S 연결 잠금" : "A/S 연결 " + min + "분");
                 if (!Remote.canAdb(this)) errors.add("A/S 연결 권한 없음(install-board-app.bat 필요)");
             } catch (NumberFormatException e) {
