@@ -85,6 +85,8 @@ B. 수정 화면 일곱 개 (매장 POS의 큰 화면과 폰 화면 모두에서
 - callNumber(storeId, number) : 번호(1~9999)를 부른다. 이미 부른 번호면 맨 앞으로 옮긴다.
   가맹점 계정도 부를 수 있다. 매장마다 최근 30개만 남고 나머지는 서버가 지운다.
 - clearCalls(storeId, number) : 부른 번호 하나를 지운다. number를 빼면 그 매장 번호를 모두 지운다.
+- listDevices(storeId) : 이 매장에 붙은 TV 목록 [{ id, name, screen }]. screen은 그 TV가 띄운 화면 번호(모르면 null).
+  로그인한 매장 계정만 읽을 수 있다. 수정 화면이 "이 화면을 띄운 TV"를 알려 주는 데 쓴다(못 읽으면 일반 문구로).
 - listFranchiseStores(), createFranchiseStore(store) : 본사의 가맹점 목록과 등록. 다음 단계라 아직 api.js에 없다.
 - onBoardChange(callback) : 메뉴판 화면의 바로 반영용. board.js가 부르므로 화면에서는 부르지 않는다.
 
