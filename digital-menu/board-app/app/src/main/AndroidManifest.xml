@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- 매장 서버에서 받은 새 버전 APK 설치 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- A/S 연결(ADB)을 평소 잠그고 필요할 때만 켜기. 일반 앱에는 안 주는 권한이라 설치 bat이 adb로 준다 -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <!-- USB 메모리의 menuboard.txt 읽기. 설치 bat이 adb로 허용한다 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!-- 안드로이드 TV(리모컨만 있는 기기)와 일반 안드로이드 보드 둘 다에 설치되게 한다 -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -50,6 +54,14 @@
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.DeviceDefault" />
+
+        <!-- 원격 재시작: 별도 프로세스에서 메뉴판 프로세스를 끝내고 다시 띄운다. 화면에는 보이지 않는다 -->
+        <activity
+            android:name=".RestartActivity"
+            android:exported="false"
+            android:process=":restart"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- 홈 앱을 바꿀 수 없는 안드로이드 TV(구글 TV 등)는 부팅 완료 알림을 받아 앱을 띄운다 -->
         <receiver

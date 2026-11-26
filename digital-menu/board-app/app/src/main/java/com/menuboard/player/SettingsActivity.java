@@ -17,6 +17,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -25,7 +26,7 @@ import java.util.List;
  */
 public class SettingsActivity extends Activity {
     private SharedPreferences prefs;
-    private EditText server, screen, zoom;
+    private EditText server, screen, zoom, rotation, brightness;
     private TextView status;
     private Button overlay, unknown;
 
@@ -48,12 +49,16 @@ public class SettingsActivity extends Activity {
         Button save = button(l, "저장하고 메뉴판 보기", v -> {
             String err = MainActivity.save(prefs, server.getText().toString(),
                     screen.getText().toString(), zoom.getText().toString());
+            if (err == null) err = MainActivity.saveLook(prefs, rotation.getText().toString(), brightness.getText().toString());
             if (err != null) toast(err);
             else finish();
         });
         button(l, "같은 망에서 서버 자동 찾기", v -> find());
         button(l, "업데이트 확인·설치", v -> update());
         status = text(l, "", 18);
+        String usb = prefs.getString("usbResult", "");
+        String adb = Remote.canAdb(this) ? (Boolean.TRUE.equals(Remote.adbOn(this)) ? "열림" : "잠금") : "권한 없음(설치 bat 필요)";
+        text(l, "A/S 연결(ADB): " + adb + (usb.isEmpty() ? "" : "   ·   USB 설정 파일: " + usb), 16);
 
         overlay = button(l, "부팅 때 자동 실행 허용 (다른 앱 위에 표시)", v -> open(
                 new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()))));
@@ -82,7 +87,7 @@ public class SettingsActivity extends Activity {
     private void find() {
         status.setText("같은 망에서 메뉴판 서버를 찾는 중… (최대 30초)");
         new Thread(() -> {
-            List<String> found = Net.discover(this);
+            List<String> found = new ArrayList<>(Net.discover(this).keySet());
             runOnUiThread(() -> {
                 if (found.isEmpty()) {
                     status.setText("서버를 찾지 못했습니다. POS기에서 메뉴판 서버가 켜져 있는지, 같은 공유기에 연결됐는지 확인하세요.");

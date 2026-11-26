@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TV 관리</title>
+<style>
+/* TV 원격 관리 화면. 천장에 붙은 TV를 사다리 없이 POS기에서 손본다.
+   로그인은 api.js(수정 화면과 같은 로그인)를 쓰고, TV 명령은 pb_hooks/devices.pb.js 라우트를 직접 부른다.
+   POS 큰 터치 화면에서 누르기 쉽게 글자와 칸을 크게 둔다. */
+:root{color-scheme:light}
+[hidden]{display:none!important}
+body{margin:0;padding:1rem;font:20px/1.4 "Malgun Gothic",sans-serif;background:#fff;color:#000}
+section{border:1px solid #ccc;padding:1rem;margin-bottom:1rem}
+h2{margin:0 0 .5rem;font-size:1.3rem}
+.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.4rem 0}
+input,select,button{font:inherit;min-height:2.6rem;padding:0 .5rem}
+input[type=number]{width:6rem}
+label{display:inline-flex;align-items:center;gap:.25rem}
+.on{color:#080;font-weight:700}.off{color:#c00;font-weight:700}
+.muted{color:#666;font-size:.85em}
+.shot{max-width:100%;max-height:60vh;border:1px solid #999;display:block;margin-top:.5rem}
+textarea{width:100%;box-sizing:border-box;font:16px/1.4 monospace;min-height:11rem}
+#msg{position:sticky;top:0;background:#ffd;padding:.25rem 1rem;min-height:1.4em;z-index:1}
+</style>
+
+<div id="msg"></div>
+
+<section id="auth" hidden>
+  <h2>로그인 (메뉴 수정 화면과 같은 계정)</h2>
+  <div class="row"><input id="email" type="email" placeholder="이메일"><input id="password" type="password" placeholder="비밀번호">
+    <button id="login">로그인</button></div>
+</section>
+
+<div id="app" hidden>
+  <section>
+    <h2>TV 목록</h2>
+    <p class="muted">TV가 15초마다 이 서버에 알려 옵니다. 바꾼 설정·재시작·화면 보기는 15초 안팎 뒤에 TV에 반영됩니다.</p>
+    <div id="list"></div>
+  </section>
+  <section>
+    <h2>USB 설정 파일 만들기 (현장 비상용)</h2>
+    <p class="muted">TV가 이 서버에 붙지 못해 위 목록에서 손볼 수 없을 때 씁니다. 아래 내용을 <b>menuboard.txt</b> 로 USB 메모리 맨 위에 저장해
+      TV(보드)에 꽂으면 몇 초 안에 적용되고 화면 아래에 결과가 잠깐 뜹니다. 필요 없는 줄은 지워도 됩니다.</p>
+    <textarea id="usb">server=192.168.0.10:8090
+screen=1
+zoom=100
+rotation=0        # 0 가로, 90·270 세로, 180 뒤집기
+brightness=-1     # 10~100, -1 = 기본
+as=60             # A/S 연결(네트워크 ADB)을 60분 열기, 0 = 잠금
+restart=yes       # 적용 뒤 메뉴판 앱 다시 켜기</textarea>
+    <div class="row"><button id="usbSave">menuboard.txt 내려받기</button></div>
+  </section>
+  <button id="logout">로그아웃</button>
+</div>
+
+<script src="api.js"></script>
+<script>
+var $ = function (id) { return document.getElementById(id) }
+function say(t) { $('msg').textContent = t }
+function el(tag, text, cls) { var e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e }
+
+// api.js와 같은 로그인 정보를 읽기만 한다(저장·삭제는 api.js가 한다).
+function token() { try { return JSON.parse(localStorage.getItem('menuboard_auth')).token } catch (e) { return '' } }
+function call(method, path, body) {
+  return fetch(path, {
+    method: method,
+    headers: Object.assign({ Authorization: token() }, body ? { 'Content-Type': 'application/json' } : {}),
+    body: body ? JSON.stringify(body) : undefined,
+  }).then(function (res) {
+    return res.text().then(function (t) {
+      var data = t ? JSON.parse(t) : {}
+      if (res.status === 401) { start(null); throw new Error('다시 로그인해 주세요.') }
+      if (!res.ok) throw new Error(data.message || ('오류 ' + res.status))
+      return data
+    })
+  })
+}
+function devicePath(id, what) { return '/api/menuboard/devices/' + encodeURIComponent(id) + '/' + what }
+
+var waitingShot = {} // TV id → 요청 전 shot_at
+var editing = false  // 입력 중에는 목록을 다시 그리지 않는다
+
+function ago(sec) {
+  var s = Math.floor(Date.now() / 1000) - sec
+  if (s < 60) return s + '초 전'
+  if (s < 3600) return Math.floor(s / 60) + '분 전'
+  return Math.floor(s / 3600) + '시간 전'
+}
+
+function load() {
+  if (editing) return Promise.resolve()
+  return call('GET', '/api/collections/devices/records?sort=name&perPage=100').then(function (res) { draw(res.items) })
+}
+
+function draw(devices) {
+  var list = $('list')
+  list.textContent = ''
+  if (!devices.length) {
+    list.appendChild(el('p', '아직 등록된 TV가 없습니다. TV의 메뉴판 앱이 이 서버에 붙으면 저절로 나타납니다.'))
+    return
+  }
+  devices.forEach(function (d) { list.appendChild(card(d)) })
+}
+
+function card(d) {
+  var r = d.reported || {}
+  var want = d.desired || {}
+  var online = Math.floor(Date.now() / 1000) - d.last_seen < 45
+  var box = el('section')
+  var head = el('h2')
+  head.appendChild(el('span', d.name + '  '))
+  head.appendChild(el('span', online ? '● 연결됨' : '● 끊김 (' + ago(d.last_seen) + ')', online ? 'on' : 'off'))
+  box.appendChild(head)
+  box.appendChild(el('div', 'IP ' + d.ip + (d.version ? ' · 앱 ' + d.version : '') + (d.model ? ' · ' + d.model : '') + (r.width ? ' · ' + r.width + '×' + r.height : ''), 'muted'))
+  var now = r.screen == null ? '아직 이 TV의 설정 보고가 없습니다.'
+    : '지금: 화면 ' + r.screen + ' · 배율 ' + r.zoom + '% · 방향 ' + r.rotation + '° · 밝기 ' + (r.brightness < 0 ? '기본' : r.brightness + '%') + ' · 서버 ' + r.server
+  if (want && d.rev > (r.rev || 0)) now += '  (바꾼 설정 적용 기다리는 중)'
+  box.appendChild(el('div', now, 'muted'))
+  if (r.note) box.appendChild(el('div', '알림: ' + r.note, 'off'))
+  if (r.usb) box.appendChild(el('div', 'USB 설정 파일: ' + r.usb, 'muted'))
+
+  // 설정
+  var form = el('div', null, 'row')
+  function field(label, key, value, attrs) {
+    var l = el('label', label)
+    var i = el('input')
+    i.value = value == null ? '' : value
+    for (var k in attrs) i.setAttribute(k, attrs[k])
+    i.onfocus = function () { editing = true }
+    i.onblur = function () { editing = false }
+    l.appendChild(i)
+    form.appendChild(l)
+    return i
+  }
+  var name = field('이름', 'name', d.name, { maxlength: 50 })
+  var screen = field('화면', 'screen', want.screen || r.screen, { type: 'number', min: 1, max: 4 })
+  var zoom = field('배율%', 'zoom', want.zoom || r.zoom, { type: 'number', min: 25, max: 400 })
+  var rotation = el('select')
+  ;[[0, '가로'], [90, '세로(90°)'], [180, '뒤집기'], [270, '세로(270°)']].forEach(function (o) {
+    var opt = el('option', o[1]); opt.value = o[0]; rotation.appendChild(opt)
+  })
+  rotation.value = want.rotation != null ? want.rotation : (r.rotation || 0)
+  var rl = el('label', '방향'); rl.appendChild(rotation); form.appendChild(rl)
+  var bright = field('밝기%(-1 기본)', 'brightness', want.brightness != null ? want.brightness : r.brightness, { type: 'number', min: -1, max: 100 })
+  var server = field('서버 주소', 'server', want.server || r.server, { size: 20 })
+  var save = el('button', '설정 보내기')
+  save.onclick = function () {
+    editing = false
+    var body = { name: name.value.trim(), screen: +screen.value, zoom: +zoom.value, rotation: +rotation.value, brightness: +bright.value }
+    if (server.value.trim() && server.value.trim() !== r.server) {
+      if (!confirm('서버 주소를 ' + server.value.trim() + ' 로 바꿀까요?\nTV가 새 주소에 붙지 못하면 바꾸지 않고 그대로 둡니다.')) return
+      body.server = server.value.trim()
+    }
+    call('POST', devicePath(d.id, 'config'), body).then(function () { say(d.name + ': 설정을 보냈습니다. 15초 안팎 뒤 TV에 반영됩니다.'); load() })
+      .catch(function (err) { say('설정 실패: ' + err.message) })
+  }
+  form.appendChild(save)
+  box.appendChild(form)
+
+  // 명령
+  var cmds = el('div', null, 'row')
+  var shotBtn = el('button', '지금 화면 보기')
+  shotBtn.onclick = function () {
+    call('POST', devicePath(d.id, 'shot')).then(function (res) {
+      waitingShot[d.id] = res.shotAt
+      say(d.name + ': 화면을 찍어 오는 중… (15초 안팎)')
+      waitShot(d.id, d.name, 0)
+    }).catch(function (err) { say('요청 실패: ' + err.message) })
+  }
+  cmds.appendChild(shotBtn)
+  var restart = el('button', '메뉴판 앱 다시 켜기')
+  restart.onclick = function () {
+    if (!confirm(d.name + '의 메뉴판 앱을 다시 켤까요? 몇 초 동안 화면이 꺼집니다.')) return
+    call('POST', devicePath(d.id, 'restart')).then(function () { say(d.name + ': 다시 켜기를 보냈습니다.') })
+      .catch(function (err) { say('요청 실패: ' + err.message) })
+  }
+  cmds.appendChild(restart)
+
+  var left = d.adb_until - Math.floor(Date.now() / 1000)
+  var adbState = !r.canAdb ? 'A/S 연결: 권한 없음(설치 bat 필요)'
+    : left > 0 ? 'A/S 연결: 열림 (' + Math.ceil(left / 60) + '분 남음' + (r.adb ? '' : ', TV 반영 기다리는 중') + ')'
+    : 'A/S 연결: 잠금' + (r.adb ? ' (TV 반영 기다리는 중)' : '')
+  cmds.appendChild(el('span', adbState, left > 0 ? 'on' : 'muted'))
+  var adbOpen = el('button', 'A/S 연결 60분 열기')
+  adbOpen.onclick = function () {
+    if (!confirm('A/S 기사가 같은 망에서 이 TV에 adb로 붙을 수 있게 60분 동안 엽니다. 시간이 지나면 저절로 잠깁니다.')) return
+    call('POST', devicePath(d.id, 'adb'), { minutes: 60 }).then(function () { say(d.name + ': A/S 연결을 60분 열었습니다. (TV 주소 ' + d.ip + ':5555)'); load() })
+      .catch(function (err) { say('요청 실패: ' + err.message) })
+  }
+  var adbClose = el('button', '지금 잠그기')
+  adbClose.onclick = function () {
+    call('POST', devicePath(d.id, 'adb'), { minutes: 0 }).then(function () { say(d.name + ': A/S 연결을 잠갔습니다.'); load() })
+      .catch(function (err) { say('요청 실패: ' + err.message) })
+  }
+  cmds.appendChild(left > 0 ? adbClose : adbOpen)
+  var del = el('button', '목록에서 지우기')
+  del.onclick = function () {
+    if (!confirm(d.name + '을(를) 목록에서 지울까요? 그 TV가 켜져 있으면 다음 보고 때 새 이름으로 다시 나타납니다.')) return
+    call('DELETE', '/api/collections/devices/records/' + encodeURIComponent(d.id)).then(function () { say('지웠습니다.'); load() })
+      .catch(function (err) { say('지우기 실패: ' + err.message) })
+  }
+  cmds.appendChild(del)
+  box.appendChild(cmds)
+
+  if (d.shot) {
+    box.appendChild(el('div', '마지막 화면: ' + ago(d.shot_at), 'muted'))
+    var img = el('img', null, 'shot')
+    img.src = '/api/files/devices/' + d.id + '/' + d.shot + '?t=' + d.shot_at
+    img.alt = d.name + ' 화면'
+    box.appendChild(img)
+  }
+  return box
+}
+
+// 사진이 올라올 때까지 3초마다 확인(최대 45초)
+function waitShot(id, name, tries) {
+  setTimeout(function () {
+    call('GET', '/api/collections/devices/records/' + encodeURIComponent(id)).then(function (d) {
+      if (d.shot_at > waitingShot[id]) { say(name + ': 화면을 받았습니다.'); delete waitingShot[id]; return load() }
+      if (tries >= 15) { say(name + ': 화면을 받지 못했습니다. TV가 연결돼 있는지 확인해 주세요.'); return }
+      waitShot(id, name, tries + 1)
+    }).catch(function (err) { say('확인 실패: ' + err.message) })
+  }, 3000)
+}
+
+var timer = null
+function start(session) {
+  $('auth').hidden = !!session
+  $('app').hidden = !session
+  clearInterval(timer)
+  if (!session) return
+  load().catch(function (err) { say('읽기 실패: ' + err.message) })
+  timer = setInterval(function () { load().catch(function () {}) }, 10000)
+}
+
+$('login').onclick = function () {
+  api.login($('email').value, $('password').value).then(start).then(function () { say('') })
+    .catch(function (err) { say('로그인 실패: ' + err.message) })
+}
+$('logout').onclick = function () { api.logout().then(function () { start(null) }) }
+$('usbSave').onclick = function () {
+  var a = el('a')
+  a.href = URL.createObjectURL(new Blob([$('usb').value + '\r\n'], { type: 'text/plain;charset=utf-8' }))
+  a.download = 'menuboard.txt'
+  document.body.appendChild(a); a.click(); a.remove()
+}
+api.session().then(start)
+</script>
+</html>
