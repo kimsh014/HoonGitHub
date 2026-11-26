@@ -202,7 +202,7 @@ async function main(browser) {
   answers.push('dismiss')
   await page.getByRole('button', { name: '화면 구성 저장' }).click()
   await msg('화면 구성을 저장하지 않았습니다')
-  assert.match(dialogs[dialogs.length - 1], /1번 화면을 지우면 이 화면을 띄운 TV\(카운터 TV\)에는 메뉴가 나오지 않습니다/)
+  assert.match(dialogs[dialogs.length - 1], /1번 화면을 지우면 이 화면을 띄운 TV\(카운터 TV\)에는 메뉴 대신 매장 이름만 나옵니다/)
   assert.strictEqual((await api('/api/collections/screens/records')).items.length, 1)
   console.log('  TV 미리보기, TV가 쓰는 화면 지우기 확인')
 

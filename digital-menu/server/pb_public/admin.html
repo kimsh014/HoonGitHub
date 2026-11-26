@@ -52,6 +52,7 @@ img{height:3rem;vertical-align:middle}
   <h2>로그인</h2>
   <div class="row"><input id="email" type="email" placeholder="이메일"><input id="password" type="password" placeholder="비밀번호 (8자 이상)">
     <button id="login">로그인</button></div>
+  <p>비밀번호를 잊었으면 POS기에서 <a href="http://127.0.0.1:8090/reset.html">http://127.0.0.1:8090/reset.html</a> 을 열어 다시 정하세요.</p>
   <h2>첫 설치 (계정이 하나도 없을 때만)</h2>
   <div class="row"><input id="storeName" placeholder="매장 이름"><button id="signUp">위 이메일·비밀번호로 계정 만들기</button></div>
 </section>
@@ -490,9 +491,9 @@ function drawScreens() {
     if (gone.length) {
       var text = gone.map(function (s) {
         var tvs = tvsOn(s.no)
-        if (!tvs) return s.no + '번 화면을 지우면 그 화면을 띄운 TV에는 메뉴가 나오지 않습니다.'
+        if (!tvs) return s.no + '번 화면을 지우면 그 화면을 띄운 TV에는 메뉴 대신 매장 이름만 나옵니다.'
         if (!tvs.length) return s.no + '번 화면을 지웁니다. 지금 이 화면을 띄운 TV는 없습니다.'
-        return s.no + '번 화면을 지우면 이 화면을 띄운 TV(' + tvs.join(', ') + ')에는 메뉴가 나오지 않습니다.'
+        return s.no + '번 화면을 지우면 이 화면을 띄운 TV(' + tvs.join(', ') + ')에는 메뉴 대신 매장 이름만 나옵니다.'
       })
       if (!confirm(text.join('\n') + '\n지울까요?')) return say('화면 구성을 저장하지 않았습니다.')
     }
