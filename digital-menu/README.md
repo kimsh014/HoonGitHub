@@ -38,14 +38,35 @@ POS PC (Windows)                               안드로이드 보드 → 35~66�
 
 ## 서버 실행 (POS PC, Windows)
 
+매장 설치는 **[설치 안내서 `docs/install-pos.md`](docs/install-pos.md)** 를 따릅니다(설치 기사용, 고정 IP·BIOS·백신·백업 포함).
+
 1. [PocketBase](https://github.com/pocketbase/pocketbase/releases) Windows 실행 파일(작업 당시 v0.40.6)을 받아 `server/pocketbase.exe`로 둡니다. 실행 파일은 저장소에 넣지 않습니다.
-2. `server/start-server.bat`을 더블클릭합니다. 다음 명령으로 `0.0.0.0:8090`에서 켜지고, 창에 보드에 넣을 매장 네트워크 주소가 나옵니다. 창을 닫으면 서버가 꺼집니다.
-   ```
-   pocketbase.exe serve --http 0.0.0.0:8090 --dir pb_data --migrationsDir pb_migrations --hooksDir pb_hooks --publicDir pb_public
-   ```
-   처음 켤 때 Windows 방화벽이 물으면 '허용'을 누릅니다.
-3. 수정 화면: `http://127.0.0.1:8090/admin.html`. 빈 서버에서는 여기서 첫 매장과 계정을 만듭니다.
-4. 메뉴판 화면: `http://127.0.0.1:8090/?screen=1&zoom=100`
+2. **매장 설치**: `server/install-server.bat`을 더블클릭합니다(관리자 권한으로 스스로 다시 열림). 인터넷 없이 Windows 기본 기능만 씁니다.
+   - 작업 스케줄러 작업 `MenuBoardServer`: 컴퓨터가 켜지면 로그온 없이 SYSTEM 계정으로 `run-server.ps1`을 창 없이 실행. 배터리 조건 없음, 실행 시간 제한 없음, 실패 시 1분마다 다시 시작(999번).
+   - `run-server.ps1`: 아래 명령(경로는 이 폴더 기준 절대 경로)을 돌리고, 꺼지면 5초 뒤 다시 켭니다. 출력은 `server/logs/server-YYYYMMDD.log`(하루 단위, 5MB 넘으면 `.1.log`로 교체, 14일 보관).
+     ```
+     pocketbase.exe serve --http 0.0.0.0:8090 --dir pb_data --migrationsDir pb_migrations --hooksDir pb_hooks --publicDir pb_public
+     ```
+   - A/S 관리자(PocketBase superuser) `as@poswing.local`을 설치마다 무작위 24자 비밀번호로 `superuser create`. 이미 있으면 그대로 두고, `install-server.bat --reset`일 때만 `superuser upsert`로 새로 만듭니다. 비밀번호는 화면과 `server/AS-관리자-비밀번호.txt`(Administrators·SYSTEM만 읽기)에 나옵니다. A/S 기록에 옮기고 파일은 지웁니다.
+   - 방화벽: 그룹 `MenuBoard`로 TCP 8090 들어오기 규칙과 `pocketbase.exe` 프로그램 규칙(모든 프로필, 원격 주소 `LocalSubnet`). Windows가 저절로 만든 `pocketbase.exe` 규칙(차단 포함)은 지우고 다시 만듭니다.
+   - `powercfg`로 AC 절전·최대 절전·디스크 끄기 0, 빠른 시작 끄기(물음), Windows 업데이트 사용 시간 7~24시(레지스트리, Home 에디션은 안 먹을 수 있음), Defender 예외(실패해도 계속).
+   - 제거: `server/uninstall-server.bat`(작업·방화벽·Defender 예외만 지우고 `pb_data`는 남김).
+3. **개발·점검용**: `server/start-server.bat`은 같은 명령을 콘솔 창에서 돌립니다(창을 닫으면 꺼짐). `MenuBoardServer`가 설치돼 있거나 8090이 이미 쓰이면 경고합니다. 먼저 `schtasks /end /tn MenuBoardServer`.
+4. 수정 화면: `http://127.0.0.1:8090/admin.html`. 빈 서버에서는 여기서 첫 매장과 계정을 만듭니다.
+5. 메뉴판 화면: `http://127.0.0.1:8090/?screen=1&zoom=100`
+
+`.bat`·`.ps1`은 CRLF로 꺼내지게 `.gitattributes`에 적어 두었고, `.ps1`은 UTF-8 BOM으로 저장합니다(Windows PowerShell 5.1이 BOM 없는 한글을 깨뜨림).
+
+### 배포 묶음 `dist/` 만들기 (커밋하지 않음)
+
+```
+dist/
+  server/   pocketbase.exe(v0.40.6, Windows) pb_migrations/ pb_hooks/ pb_public/
+            install-server.bat install-server.ps1 run-server.ps1 uninstall-server.bat start-server.bat
+  board-app/ menuboard-player.apk install-board-app.bat
+```
+
+`server/`에서 위 파일만 복사합니다. `pb_data/`, `logs/`, `.dev-*`, `AS-관리자-비밀번호.txt`, `shots/`, 검사 스크립트(`check_*.js`, `seed_and_check.py`)는 넣지 않습니다. 묶음을 만든 뒤 `dist/server`에 `pb_data`와 `.dev-`로 시작하는 파일이 없는지 확인합니다.
 
 ### 검사 스크립트 (서버가 127.0.0.1:8090에서 돌고 있어야 함)
 
@@ -55,6 +76,7 @@ POS PC (Windows)                               안드로이드 보드 → 35~66�
 - `node check_screens.js [shots]`: 메뉴판 화면을 서버 없이 가짜 데이터로 띄워 1920×1080, 3840×2160, 세로 1080×1920과 글자 배율 100·150%에서 잘리는 글이 없는지 검사합니다. `shots`를 붙이면 `server/shots/`에 스크린샷을 남깁니다(Playwright와 Chromium 필요, 서버는 필요 없음).
 - `node check_devices.js`: TV 원격 관리(등록·보고, 설정 바꾸기, 재시작·캡처·A/S 연결 요청, 캡처 사진, 매장 구분)를 임시 서버(127.0.0.1:8093)로 검사합니다.
 - `node check_pos.js`: POS·키오스크 연동을 검사합니다. 켜 둔 서버와 상관없이 임시 서버(127.0.0.1:8092)를 잠깐 띄워 쓰고, `pocketbase.exe`만 있으면 됩니다(다른 위치면 `POCKETBASE` 환경 변수). 보드 화면(`board.js`)이 POS 변경을 새로고침 없이 다시 그리는 데 걸린 시간도 찍습니다.
+- `node check_admin.js`: 수정 화면(`admin.html`)을 실제 브라우저(Playwright chromium)로 눌러 봅니다. 임시 서버(127.0.0.1:8094)를 잠깐 띄워 쓰고, 가격 읽기·확인창, 사진 줄이기, 저장 중 잠금, 구역 지우기 막기, 품절 목록, TV 미리보기, 폰 크기 넘침을 확인합니다. `SHOTS=폴더`를 주면 화면 사진을 남깁니다.
 
 ## POS·키오스크 연동
 
@@ -118,7 +140,7 @@ curl -X POST http://192.168.0.10:8090/api/menuboard/pos/items -H "X-POS-Key: mbp
    - 결과: `board-app/build/menuboard-player.apk`와 업데이트 묶음 `board-app/build/updates/`. 버전은 `build.sh` 맨 위 `VERSION_CODE`(새 버전마다 1씩 올림)와 `VERSION_NAME`.
    - 서명 키 `.debug.keystore`가 없으면 새로 만듭니다. **업데이트는 같은 키로 서명한 APK만 설치되므로 이 파일을 백업하세요.** 잃으면 설치된 보드는 앱을 지우고 다시 깔아야 합니다.
 2. **설치**: `menuboard-player.apk`를 `install-board-app.bat`과 같은 폴더에 두고, 보드를 USB(또는 adb 네트워크)로 연결한 PC에서 더블클릭합니다. bat이 부팅 자동 실행과 업데이트 설치 권한도 허용합니다. adb가 없으면 APK를 USB 메모리로 옮겨 보드에서 설치하고, 설정 화면의 두 권한 버튼으로 허용합니다.
-3. 보드가 같은 망의 서버를 스스로 찾습니다. 못 찾으면 설정 화면이 뜨니 서버 주소(예: `192.168.0.10:8090`), 화면 번호, 글자 크기 배율(%)을 넣고 저장합니다. adb로는 `--es server`, `--ei screen`, `--ei zoom` 인텐트 값으로도 넣을 수 있습니다.
+3. 보드가 같은 망의 서버를 스스로 찾습니다. 못 찾으면 설정 화면이 뜨니 서버 주소(예: `192.168.0.10:8090`), 화면 번호, 글자 크기 배율(%)을 넣고 저장합니다. adb로는 `--es server`, `--ei screen`, `--ei zoom` 인텐트 값으로도 넣을 수 있습니다(ADB가 켜져 있을 때만 받음). 설정 화면에서는 화면 방향과 밝기도 바꿉니다.
 
 ### 보드 앱 업데이트
 
@@ -141,9 +163,9 @@ POS기에서 `http://127.0.0.1:8090/devices.html`을 엽니다(메뉴 수정 화
   - 밝기는 화면 위에 검은 막을 덮는 방식입니다. HDMI로 연결된 TV의 백라이트는 앱이 바꿀 수 없습니다.
 - **메뉴판 앱 다시 켜기**: 앱만 다시 켭니다. 보드 전체 재부팅은 보드 펌웨어 시스템 서명이 있어야 해서 1차에는 없습니다.
 - **지금 화면 보기**: TV가 지금 화면을 찍어 올립니다(가로 1280 이하 JPEG, 마지막 한 장만 보관).
-- **A/S 연결(네트워크 ADB)**: 평소에는 잠겨 있고, 누른 때부터 60분만 열립니다. 시간이 지나면 서버에 붙지 못해도 TV가 스스로 잠급니다.
+- **A/S 연결(네트워크 ADB)**: 평소에는 잠겨 있고, A/S 관리자 계정(설치 때 만든 관리자)으로만 열며 누른 때부터 30분(최대 60분)만 열립니다. 사장님 계정으로는 잠그기만 됩니다. 관리자 비밀번호가 매장 와이파이로 암호화 없이 가지 않게, 여는 것은 POS기에서(`http://127.0.0.1:8090/devices.html`) 합니다. 시간이 지나면 서버에 붙지 못해도 TV가 스스로 잠급니다.
   - 설치 bat이 `WRITE_SECURE_SETTINGS` 권한을 줘야 동작합니다. **설치가 끝나면 그 TV의 adb는 잠기니**, 다시 adb로 붙으려면 여기서 먼저 엽니다.
-  - 포트(보통 5555)는 보드 펌웨어 설정을 따릅니다. **출고 펌웨어는 ADB 인증(`ro.adb.secure=1`)을 켜 두어야 합니다.** 인증이 꺼진 펌웨어는 열려 있는 60분 동안 같은 망의 누구나 TV를 조작할 수 있습니다.
+  - 포트(보통 5555)는 보드 펌웨어 설정을 따릅니다. **출고 펌웨어는 ADB 인증(`ro.adb.secure=1`)을 켜 두어야 합니다.** 인증이 꺼진 펌웨어는 열려 있는 동안 같은 망의 누구나 TV를 조작할 수 있습니다.
 - **목록에서 지우기**: 그 TV는 다음 보고 때 새로 등록되어 다시 나타납니다. 모르는 TV를 치울 때 씁니다.
 
 서버 쪽 코드는 `server/pb_hooks/devices.pb.js`(+ `devices_lib.js`), 저장 칸은 `pb_migrations/1795000500_devices.js`, 검사는 `node check_devices.js`(임시 서버 127.0.0.1:8093)입니다.
@@ -158,7 +180,7 @@ screen=1
 zoom=100
 rotation=0        # 0 가로, 90·270 세로, 180 뒤집기
 brightness=-1     # 10~100, -1 = 기본
-as=60             # A/S 연결을 60분 열기, 0 = 잠금
+as=30             # A/S 연결을 30분 열기(최대 60), 0 = 잠금
 restart=yes       # 적용 뒤 메뉴판 앱 다시 켜기
 ```
 
@@ -166,4 +188,4 @@ restart=yes       # 적용 뒤 메뉴판 앱 다시 켜기
 
 ## 저장소에 넣지 않은 것
 
-`dist/`(배포 묶음), `pocketbase.exe`와 PocketBase의 `LICENSE.md`·`CHANGELOG.md`, `pb_data/`(계정과 메뉴 DB), `.dev-owner`·`.dev-superuser`(개발 계정 비밀번호), `.debug.keystore`, `board-app/build/`, `board-app/shots/`. 자세한 목록은 `.gitignore`에 있습니다.
+`dist/`(배포 묶음), `pocketbase.exe`와 PocketBase의 `LICENSE.md`·`CHANGELOG.md`, `pb_data/`(계정과 메뉴 DB), `server/logs/`(서버 로그), `server/AS-관리자-비밀번호.txt`, `.dev-owner`·`.dev-superuser`(개발 계정 비밀번호), `.debug.keystore`, `board-app/build/`, `board-app/shots/`. 자세한 목록은 `.gitignore`에 있습니다.

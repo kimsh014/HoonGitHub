@@ -37,6 +37,14 @@ textarea{width:100%;box-sizing:border-box;font:16px/1.4 monospace;min-height:11r
     <p class="muted">TV가 15초마다 이 서버에 알려 옵니다. 바꾼 설정·재시작·화면 보기는 15초 안팎 뒤에 TV에 반영됩니다.</p>
     <div id="list"></div>
   </section>
+  <section id="asBox" hidden>
+    <h2>A/S 연결 열기 (A/S 기사 전용)</h2>
+    <p class="muted"><span id="asWhat"></span> — 같은 망에서 이 TV에 adb로 붙을 수 있게 30분 동안 엽니다.
+      설치 때 만든 A/S 관리자 계정이 필요합니다. 사장님 계정으로는 열리지 않습니다.</p>
+    <div class="row"><input id="asEmail" type="email" placeholder="A/S 관리자 이메일" autocomplete="off">
+      <input id="asPassword" type="password" placeholder="A/S 관리자 비밀번호" autocomplete="off">
+      <button id="asOpen">30분 열기</button><button id="asCancel">취소</button></div>
+  </section>
   <section>
     <h2>USB 설정 파일 만들기 (현장 비상용)</h2>
     <p class="muted">TV가 이 서버에 붙지 못해 위 목록에서 손볼 수 없을 때 씁니다. 아래 내용을 <b>menuboard.txt</b> 로 USB 메모리 맨 위에 저장해
@@ -46,7 +54,7 @@ screen=1
 zoom=100
 rotation=0        # 0 가로, 90·270 세로, 180 뒤집기
 brightness=-1     # 10~100, -1 = 기본
-as=60             # A/S 연결(네트워크 ADB)을 60분 열기, 0 = 잠금
+as=30             # A/S 연결(네트워크 ADB)을 30분 열기(최대 60), 0 = 잠금
 restart=yes       # 적용 뒤 메뉴판 앱 다시 켜기</textarea>
     <div class="row"><button id="usbSave">menuboard.txt 내려받기</button></div>
   </section>
@@ -61,15 +69,16 @@ function el(tag, text, cls) { var e = document.createElement(tag); if (text != n
 
 // api.js와 같은 로그인 정보를 읽기만 한다(저장·삭제는 api.js가 한다).
 function token() { try { return JSON.parse(localStorage.getItem('menuboard_auth')).token } catch (e) { return '' } }
-function call(method, path, body) {
+// asToken이 있으면 매장 계정 대신 A/S 관리자 로그인으로 부른다(A/S 연결 열기). 저장하지 않고 이 화면에만 둔다.
+function call(method, path, body, asToken) {
   return fetch(path, {
     method: method,
-    headers: Object.assign({ Authorization: token() }, body ? { 'Content-Type': 'application/json' } : {}),
+    headers: Object.assign({ Authorization: asToken || token() }, body ? { 'Content-Type': 'application/json' } : {}),
     body: body ? JSON.stringify(body) : undefined,
   }).then(function (res) {
     return res.text().then(function (t) {
       var data = t ? JSON.parse(t) : {}
-      if (res.status === 401) { start(null); throw new Error('다시 로그인해 주세요.') }
+      if (res.status === 401 && !asToken) { start(null); throw new Error('다시 로그인해 주세요.') }
       if (!res.ok) throw new Error(data.message || ('오류 ' + res.status))
       return data
     })
@@ -181,12 +190,8 @@ function card(d) {
     : left > 0 ? 'A/S 연결: 열림 (' + Math.ceil(left / 60) + '분 남음' + (r.adb ? '' : ', TV 반영 기다리는 중') + ')'
     : 'A/S 연결: 잠금' + (r.adb ? ' (TV 반영 기다리는 중)' : '')
   cmds.appendChild(el('span', adbState, left > 0 ? 'on' : 'muted'))
-  var adbOpen = el('button', 'A/S 연결 60분 열기')
-  adbOpen.onclick = function () {
-    if (!confirm('A/S 기사가 같은 망에서 이 TV에 adb로 붙을 수 있게 60분 동안 엽니다. 시간이 지나면 저절로 잠깁니다.')) return
-    call('POST', devicePath(d.id, 'adb'), { minutes: 60 }).then(function () { say(d.name + ': A/S 연결을 60분 열었습니다. (TV 주소 ' + d.ip + ':5555)'); load() })
-      .catch(function (err) { say('요청 실패: ' + err.message) })
-  }
+  var adbOpen = el('button', 'A/S 연결 30분 열기 (A/S 기사)')
+  adbOpen.onclick = function () { askAs(d) }
   var adbClose = el('button', '지금 잠그기')
   adbClose.onclick = function () {
     call('POST', devicePath(d.id, 'adb'), { minutes: 0 }).then(function () { say(d.name + ': A/S 연결을 잠갔습니다.'); load() })
@@ -231,6 +236,36 @@ function start(session) {
   if (!session) return
   load().catch(function (err) { say('읽기 실패: ' + err.message) })
   timer = setInterval(function () { load().catch(function () {}) }, 10000)
+}
+
+// A/S 연결은 A/S 관리자 계정(설치 때 만든 관리자)으로만 연다. 사장님 계정으로는 열리지 않는다(점검표 R-1).
+var asDevice = null
+function askAs(d) {
+  asDevice = d
+  $('asWhat').textContent = d.name + ' (TV 주소 ' + d.ip + ':5555)'
+  $('asBox').hidden = false
+  $('asEmail').focus()
+}
+$('asCancel').onclick = function () { $('asBox').hidden = true; $('asPassword').value = ''; asDevice = null }
+$('asOpen').onclick = function () {
+  var d = asDevice
+  if (!d) return
+  fetch('/api/collections/_superusers/auth-with-password', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identity: $('asEmail').value, password: $('asPassword').value }),
+  }).then(function (res) {
+    return res.json().then(function (data) {
+      if (!res.ok) throw new Error(res.status === 429 ? '너무 여러 번 틀렸습니다. 1분 뒤에 다시 해 주세요.' : 'A/S 관리자 로그인 실패')
+      return data.token
+    })
+  }).then(function (asToken) {
+    return call('POST', devicePath(d.id, 'adb'), { minutes: 30 }, asToken)
+  }).then(function () {
+    $('asPassword').value = ''
+    $('asBox').hidden = true
+    say(d.name + ': A/S 연결을 30분 열었습니다. (TV 주소 ' + d.ip + ':5555) 시간이 지나면 저절로 잠깁니다.')
+    load()
+  }).catch(function (err) { say('A/S 연결 열기 실패: ' + err.message) })
 }
 
 $('login').onclick = function () {

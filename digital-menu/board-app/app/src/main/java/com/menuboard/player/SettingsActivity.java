@@ -53,6 +53,10 @@ public class SettingsActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         screen = field(l, "화면 번호 (1~4)", String.valueOf(prefs.getInt("screen", 1)), InputType.TYPE_CLASS_NUMBER);
         zoom = field(l, "글자 크기 배율 (%)", String.valueOf(prefs.getInt("zoom", 100)), InputType.TYPE_CLASS_NUMBER);
+        rotation = field(l, "화면 방향 (0 가로, 90·270 세로, 180 뒤집기)", String.valueOf(prefs.getInt("rotation", 0)),
+                InputType.TYPE_CLASS_NUMBER);
+        brightness = field(l, "밝기 (10~100, -1 = 기본)", String.valueOf(prefs.getInt("brightness", -1)),
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
 
         Button save = button(l, "저장하고 메뉴판 보기", v -> {
             String err = MainActivity.save(prefs, server.getText().toString(),
