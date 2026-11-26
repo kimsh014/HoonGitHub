@@ -130,7 +130,7 @@ def install_order():
         ('화면 번호·방향 맞추기', '라벨 붙이기', '5분'),
         ('TV 천장에 달기', '랜선·전원 정리', ''),
         ('POS기에서 TV 확인', 'devices.html', '5분'),
-        ('번호 키패드 설치', '준비 중', ''),
+        ('번호 키패드 설치', 'install-order-app.bat · 10분', ''),
         ('사장님께 인계', '설명서·스티커', '10분'),
     ]
     s = Svg(980, 400)
@@ -139,7 +139,7 @@ def install_order():
         col, row = i % 3, i // 3
         x, y = 40 + col * 320, 60 + row * 110
         ceiling = i == 5
-        soon = b == '준비 중'
+        soon = False
         s.box(x, y, 270, 82, '', fill='#fff5f5' if ceiling else ('#f6f8fa' if soon else '#fff'),
               stroke=RED if ceiling else (GRAY if soon else DARK), dash=soon)
         s.circle(x + 30, y + 41, 18, str(i + 1), fill=GRAY if soon else RED)
@@ -220,7 +220,7 @@ def owner_day():
 
 def keypad():
     s = Svg(980, 420)
-    s.text(490, 28, '번호 키패드 쓰는 법 (키패드 앱은 준비 중, 시험 뒤 설치)', 21, DARK, 'bold')
+    s.text(490, 28, '번호 키패드 쓰는 법 (판매 프로그램을 쓰는 중에도 됩니다)', 21, DARK, 'bold')
     keys = [
         ['Num', '/', '*', '-'],
         ['7', '8', '9', '+'],
@@ -246,14 +246,14 @@ def keypad():
         ('1 0 5  Enter', '105번 부르기 → TV에 크게', GREEN),
         ('+ 1 0 5  Enter', '105번 다시 부르기 (손님이 안 오실 때)', BLUE),
         ('- 1 0 5  Enter', '105번 TV에서 빼기 (잘못 불렀을 때)', RED),
-        ('-  Enter', '방금 부른 번호 빼기', RED),
-        ('.  /  *', '. 한 자리 지움 · / * 모두 지움', AMBER),
+        ('-  Enter  Enter', '맨 앞(방금) 번호 빼기 (한 번 더 확인)', RED),
+        ('.  /  *', '. 한 자리 지움 · / * 입력 모두 지움', AMBER),
     ]
     for i, (a, b, c) in enumerate(rows):
         y = 70 + i * 62
         s.box(400, y, 190, 46, a, fill='#fff', stroke=c, color=c, weight='bold', size=17)
         s.text(610, y + 23, b, 16, DARK, anchor='start')
-    s.text(660, 395, '멀리 떨어진 번호·이미 TV에 있는 번호는 Enter를 한 번 더 누르라고 묻습니다.', 13, GRAY)
+    s.text(620, 395, 'Num Lock 꺼져도 됨 · 멀리 떨어진 번호·이미 TV에 있는 번호는 Enter 한 번 더', 13, GRAY)
     s.save('keypad.svg')
 
 
