@@ -1,0 +1,43 @@
+# 하드웨어 시험 도우미(digital-menu/hw-test)를 실제 Windows PowerShell 5.1에서 점검한다.
+# 기기 없이 임시 PocketBase 서버와 가짜 TV로 자동 검사·보고서 흐름을 돌리고, digital-menu 아래 모든 .ps1의 문법을 본다.
+name: hw-test
+
+on:
+  pull_request:
+    paths:
+      - 'digital-menu/hw-test/**'
+      - 'digital-menu/server/**/*.ps1'
+      - 'digital-menu/server/pb_hooks/**'
+      - '.github/workflows/hw-test.yml'
+  push:
+    branches: ['claude/**']
+    paths:
+      - 'digital-menu/hw-test/**'
+      - '.github/workflows/hw-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: PocketBase 0.40.6 받기
+        shell: powershell
+        run: |
+          $zip = "$env:RUNNER_TEMP\pb.zip"
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/pocketbase/pocketbase/releases/download/v0.40.6/pocketbase_0.40.6_windows_amd64.zip' -OutFile $zip
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\pb" -Force
+      - name: 시험 도우미 스스로 점검 (Windows PowerShell 5.1)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File digital-menu\hw-test\ci-selftest.ps1 -Pb "$env:RUNNER_TEMP\pb\pocketbase.exe"
+      - name: 결과 올리기
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hwtest-selftest
+          path: hwtest-selftest
+          if-no-files-found: ignore
