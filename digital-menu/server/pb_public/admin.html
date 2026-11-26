@@ -40,6 +40,7 @@ img{height:3rem;vertical-align:middle}
   <section><h2>구역</h2><div id="sections"></div></section>
   <section><h2>메뉴</h2><div id="items"></div></section>
   <section><h2>화면 구성</h2><div id="screens"></div></section>
+  <section><h2>POS·키오스크 연동</h2><div id="pos"></div></section>
   <button id="logout">로그아웃</button>
 </div>
 
@@ -81,7 +82,23 @@ function load() {
 }
 
 function draw() {
-  drawCalls(); drawStore(); drawSections(); drawItems(); drawScreens()
+  drawCalls(); drawStore(); drawSections(); drawItems(); drawScreens(); drawPos()
+}
+
+// 연동 키는 만들 때 한 번만 보여 준다. 다시 만들면 예전 키를 쓰던 POS는 새 키로 바꿔야 한다.
+function drawPos() {
+  var shown = el('input', { readOnly: true, size: 50, placeholder: '키를 만들면 여기에 한 번만 나옵니다' })
+  $('pos').replaceChildren(el('div', { className: 'row' }, [
+    button('새 연동 키 만들기', function () {
+      if (!confirm('새 키를 만들면 예전 키를 쓰던 POS·키오스크는 연결이 끊깁니다. 만들까요?')) return
+      api.issuePosKey(me.storeId).then(function (key) {
+        shown.value = key
+        shown.select()
+        say('연동 키를 만들었습니다. 지금 복사해 POS·키오스크 설정에 넣어 주세요.')
+      }).catch(function (err) { say('실패: ' + err.message) })
+    }),
+    shown,
+  ]), el('p', { textContent: '메뉴의 "POS 코드" 칸에 POS 상품 코드를 넣으면 POS가 그 코드로 품절·가격을 보냅니다.' }))
 }
 
 // 번호를 넣고 Enter(또는 호출). 부른 번호를 누르면 그 번호만 지운다.
@@ -145,12 +162,13 @@ function drawItems() {
     var amount2 = input(p[1] && p[1].amount, { type: 'number', placeholder: '가격2' })
     var badge = select([['', '딱지 없음'], ['new', '신메뉴'], ['best', '인기']], m.badge)
     var order = input(m.order, { type: 'number', placeholder: '순서' })
+    var posCode = input(m.posCode, { className: 'short', placeholder: 'POS 코드' })
     var file = input('', { type: 'file', accept: 'image/*' }), clear = el('input', { type: 'checkbox' })
     var sold = el('input', { type: 'checkbox', checked: !!m.soldOut, onchange: function () {
       run(api.setSoldOut(me.storeId, m.id, sold.checked), sold.checked ? '품절로 바꿨습니다.' : '품절을 풀었습니다.')
     } })
     return el('div', { className: 'row' + (m.soldOut ? ' sold' : '') }, [
-      name, section, label1, amount1, label2, amount2, badge, '순서', order,
+      name, section, label1, amount1, label2, amount2, badge, '순서', order, posCode,
       m.photoUrl && el('img', { src: m.photoUrl }), file, m.photoUrl && el('label', {}, [clear, '사진 지우기']),
       m.id && el('label', {}, [sold, '품절']),
       button(m.id ? '저장' : '추가', function () {
@@ -161,7 +179,7 @@ function drawItems() {
           : [{ label: label1.value || null, amount: num(amount1) }, { label: label2.value || null, amount: num(amount2) }]
         run(api.saveItem(me.storeId, {
           id: m.id, sectionId: section.value, name: name.value, prices: prices, order: num(order),
-          badge: badge.value || null, photoFile: file.files[0], photoUrl: clear.checked ? null : undefined,
+          badge: badge.value || null, posCode: posCode.value.trim() || null, photoFile: file.files[0], photoUrl: clear.checked ? null : undefined,
         }), '메뉴를 저장했습니다.')
       }),
       m.id && button('삭제', function () {
