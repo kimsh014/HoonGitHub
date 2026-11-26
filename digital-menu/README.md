@@ -38,14 +38,35 @@ POS PC (Windows)                               안드로이드 보드 → 35~66�
 
 ## 서버 실행 (POS PC, Windows)
 
+매장 설치는 **[설치 안내서 `docs/install-pos.md`](docs/install-pos.md)** 를 따릅니다(설치 기사용, 고정 IP·BIOS·백신·백업 포함).
+
 1. [PocketBase](https://github.com/pocketbase/pocketbase/releases) Windows 실행 파일(작업 당시 v0.40.6)을 받아 `server/pocketbase.exe`로 둡니다. 실행 파일은 저장소에 넣지 않습니다.
-2. `server/start-server.bat`을 더블클릭합니다. 다음 명령으로 `0.0.0.0:8090`에서 켜지고, 창에 보드에 넣을 매장 네트워크 주소가 나옵니다. 창을 닫으면 서버가 꺼집니다.
-   ```
-   pocketbase.exe serve --http 0.0.0.0:8090 --dir pb_data --migrationsDir pb_migrations --hooksDir pb_hooks --publicDir pb_public
-   ```
-   처음 켤 때 Windows 방화벽이 물으면 '허용'을 누릅니다.
-3. 수정 화면: `http://127.0.0.1:8090/admin.html`. 빈 서버에서는 여기서 첫 매장과 계정을 만듭니다.
-4. 메뉴판 화면: `http://127.0.0.1:8090/?screen=1&zoom=100`
+2. **매장 설치**: `server/install-server.bat`을 더블클릭합니다(관리자 권한으로 스스로 다시 열림). 인터넷 없이 Windows 기본 기능만 씁니다.
+   - 작업 스케줄러 작업 `MenuBoardServer`: 컴퓨터가 켜지면 로그온 없이 SYSTEM 계정으로 `run-server.ps1`을 창 없이 실행. 배터리 조건 없음, 실행 시간 제한 없음, 실패 시 1분마다 다시 시작(999번).
+   - `run-server.ps1`: 아래 명령(경로는 이 폴더 기준 절대 경로)을 돌리고, 꺼지면 5초 뒤 다시 켭니다. 출력은 `server/logs/server-YYYYMMDD.log`(하루 단위, 5MB 넘으면 `.1.log`로 교체, 14일 보관).
+     ```
+     pocketbase.exe serve --http 0.0.0.0:8090 --dir pb_data --migrationsDir pb_migrations --hooksDir pb_hooks --publicDir pb_public
+     ```
+   - A/S 관리자(PocketBase superuser) `as@poswing.local`을 설치마다 무작위 24자 비밀번호로 `superuser create`. 이미 있으면 그대로 두고, `install-server.bat --reset`일 때만 `superuser upsert`로 새로 만듭니다. 비밀번호는 화면과 `server/AS-관리자-비밀번호.txt`(Administrators·SYSTEM만 읽기)에 나옵니다. A/S 기록에 옮기고 파일은 지웁니다.
+   - 방화벽: 그룹 `MenuBoard`로 TCP 8090 들어오기 규칙과 `pocketbase.exe` 프로그램 규칙(모든 프로필, 원격 주소 `LocalSubnet`). Windows가 저절로 만든 `pocketbase.exe` 규칙(차단 포함)은 지우고 다시 만듭니다.
+   - `powercfg`로 AC 절전·최대 절전·디스크 끄기 0, 빠른 시작 끄기(물음), Windows 업데이트 사용 시간 8~24시(레지스트리, Home 에디션은 안 먹을 수 있음), Defender 예외(실패해도 계속).
+   - 제거: `server/uninstall-server.bat`(작업·방화벽·Defender 예외만 지우고 `pb_data`는 남김).
+3. **개발·점검용**: `server/start-server.bat`은 같은 명령을 콘솔 창에서 돌립니다(창을 닫으면 꺼짐). `MenuBoardServer`가 설치돼 있거나 8090이 이미 쓰이면 경고합니다. 먼저 `schtasks /end /tn MenuBoardServer`.
+4. 수정 화면: `http://127.0.0.1:8090/admin.html`. 빈 서버에서는 여기서 첫 매장과 계정을 만듭니다.
+5. 메뉴판 화면: `http://127.0.0.1:8090/?screen=1&zoom=100`
+
+`.bat`·`.ps1`은 CRLF로 꺼내지게 `.gitattributes`에 적어 두었고, `.ps1`은 UTF-8 BOM으로 저장합니다(Windows PowerShell 5.1이 BOM 없는 한글을 깨뜨림).
+
+### 배포 묶음 `dist/` 만들기 (커밋하지 않음)
+
+```
+dist/
+  server/   pocketbase.exe(v0.40.6, Windows) pb_migrations/ pb_hooks/ pb_public/
+            install-server.bat install-server.ps1 run-server.ps1 uninstall-server.bat start-server.bat
+  board-app/ menuboard-player.apk install-board-app.bat
+```
+
+`server/`에서 위 파일만 복사합니다. `pb_data/`, `logs/`, `.dev-*`, `AS-관리자-비밀번호.txt`, `shots/`, 검사 스크립트(`check_*.js`, `seed_and_check.py`)는 넣지 않습니다. 묶음을 만든 뒤 `dist/server`에 `pb_data`와 `.dev-`로 시작하는 파일이 없는지 확인합니다.
 
 ### 검사 스크립트 (서버가 127.0.0.1:8090에서 돌고 있어야 함)
 
@@ -167,4 +188,4 @@ restart=yes       # 적용 뒤 메뉴판 앱 다시 켜기
 
 ## 저장소에 넣지 않은 것
 
-`dist/`(배포 묶음), `pocketbase.exe`와 PocketBase의 `LICENSE.md`·`CHANGELOG.md`, `pb_data/`(계정과 메뉴 DB), `.dev-owner`·`.dev-superuser`(개발 계정 비밀번호), `.debug.keystore`, `board-app/build/`, `board-app/shots/`. 자세한 목록은 `.gitignore`에 있습니다.
+`dist/`(배포 묶음), `pocketbase.exe`와 PocketBase의 `LICENSE.md`·`CHANGELOG.md`, `pb_data/`(계정과 메뉴 DB), `server/logs/`(서버 로그), `server/AS-관리자-비밀번호.txt`, `.dev-owner`·`.dev-superuser`(개발 계정 비밀번호), `.debug.keystore`, `board-app/build/`, `board-app/shots/`. 자세한 목록은 `.gitignore`에 있습니다.
