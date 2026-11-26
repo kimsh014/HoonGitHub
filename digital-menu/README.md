@@ -64,6 +64,7 @@ dist/
   server/   pocketbase.exe(v0.40.6, Windows) pb_migrations/ pb_hooks/ pb_public/
             install-server.bat install-server.ps1 run-server.ps1 uninstall-server.bat start-server.bat
   board-app/ menuboard-player.apk install-board-app.bat
+  order-app/ src/ build.bat install-order-app.bat install-order-app.ps1
 ```
 
 `server/`에서 위 파일만 복사합니다. `pb_data/`, `logs/`, `.dev-*`, `AS-관리자-비밀번호.txt`, `shots/`, 검사 스크립트(`check_*.js`, `seed_and_check.py`)는 넣지 않습니다. 묶음을 만든 뒤 `dist/server`에 `pb_data`와 `.dev-`로 시작하는 파일이 없는지 확인합니다.
@@ -76,6 +77,7 @@ dist/
 - `node check_screens.js [shots]`: 메뉴판 화면을 서버 없이 가짜 데이터로 띄워 1920×1080, 3840×2160, 세로 1080×1920과 글자 배율 100·150%에서 잘리는 글이 없는지 검사합니다. `shots`를 붙이면 `server/shots/`에 스크린샷을 남깁니다(Playwright와 Chromium 필요, 서버는 필요 없음).
 - `node check_devices.js`: TV 원격 관리(등록·보고, 설정 바꾸기, 재시작·캡처·A/S 연결 요청, 캡처 사진, 매장 구분)를 임시 서버(127.0.0.1:8093)로 검사합니다.
 - `node check_pos.js`: POS·키오스크 연동을 검사합니다. 켜 둔 서버와 상관없이 임시 서버(127.0.0.1:8092)를 잠깐 띄워 쓰고, `pocketbase.exe`만 있으면 됩니다(다른 위치면 `POCKETBASE` 환경 변수). 보드 화면(`board.js`)이 POS 변경을 새로고침 없이 다시 그리는 데 걸린 시간도 찍습니다.
+- `node check_calls.js`: 키패드 앱이 쓰는 번호 호출 경로(`/api/menuboard/pos/calls`)를 임시 서버(127.0.0.1:8096)로 검사합니다. 부르기·다시 부르기·빼기, 3초 안 같은 번호, 틀린 번호, 가맹점 구분, TV 화면 반영 시간을 봅니다.
 - `node check_admin.js`: 수정 화면(`admin.html`)을 실제 브라우저(Playwright chromium)로 눌러 봅니다. 임시 서버(127.0.0.1:8094)를 잠깐 띄워 쓰고, 가격 읽기·확인창, 사진 줄이기, 저장 중 잠금, 구역 지우기 막기, 품절 목록, TV 미리보기, 폰 크기 넘침을 확인합니다. `SHOTS=폴더`를 주면 화면 사진을 남깁니다.
 
 ## POS·키오스크 연동
@@ -132,6 +134,31 @@ curl -X POST http://192.168.0.10:8090/api/menuboard/pos/items -H "X-POS-Key: mbp
 가맹점 계정으로 만든 키는 본사 메뉴를 보고, **품절만** 바꿀 수 있습니다(가맹점 자기 매장에만 품절이 걸림). 가격을 보내면 403입니다. 가격은 본사 키로 바꾸고, 본사에서 바꾼 품절·가격은 모든 가맹점 보드에 반영됩니다.
 
 > ponytail: 연동 키는 매장마다 하나입니다. POS와 키오스크가 같은 키를 씁니다. 기기마다 따로 끊을 일이 생기면 키 컬렉션을 따로 두게 고칠 것. 서버는 매장 LAN의 http로 돌므로, 인터넷에 열 때는 https 뒤에 두어 키가 그대로 지나가지 않게 할 것.
+
+## 번호 호출 키패드 앱 (`order-app/`)
+
+1차 번호 호출 방식: 판매 프로그램·키오스크가 이미 찍는 주문번호를 번호표로 쓰고, 음식이 나오면 직원이 POS기의 USB 숫자 키패드로 **번호 + Enter**를 칩니다. 키패드 앱이 서버에 보내고 TV 메뉴판(번호 화면·번호 띠)에 바로(보통 0.5초 안) 뜹니다. 부른 번호는 10분 뒤 TV에서 저절로 빠집니다.
+
+```
+USB 숫자 키패드 ─▶ MenuBoardKeypad.exe (POS기, 항상 위 좁은 창)
+                     └─HTTP POST /api/menuboard/pos/calls (X-POS-Key)─▶ 메뉴판 서버 ─실시간─▶ TV
+```
+
+- 키: 번호+Enter 부르기 · `+`[번호]Enter 다시 부르기 · `-`[번호]Enter TV에서 빼기(번호 없이 Enter면 맨 앞 번호, 방금 완료 취소) · `.` 한 자리 지움 · `*` `/` 모두 지움. 창의 화면 단추로도 똑같이 됩니다.
+- 판매 프로그램에 포커스가 있어도 숫자패드를 받고, 그 키는 판매 프로그램에 넘기지 않습니다. Num Lock이 꺼져 있어도 숫자로 읽습니다.
+- 실수 막기: 최근 번호와 30 넘게 떨어진 번호, 이미 TV에 있는 번호는 Enter를 한 번 더 받습니다. 3초 안에 같은 번호는 한 번만 띄웁니다(서버도 한 번 더 막음).
+- 기술: Windows 10에 들어 있는 .NET Framework 4.8로 도는 exe 하나(약 40KB). 따로 깔 런타임이 없고, `build.bat`이 Windows 기본 `csc.exe`로 빌드합니다.
+- 설치: `order-app/install-order-app.bat`을 판매 프로그램을 쓰는 Windows 계정에서 더블클릭. 로그인할 때 가장 높은 권한으로 켜지고(작업 스케줄러 `MenuBoardKeypad`), 앱이 꺼지면 2초 뒤 다시 켜집니다. 처음 켜면 설정 창에 수정 화면의 POS 연동 키를 붙여 넣습니다.
+- 자세한 사용법·한계·현장 시험 항목: `docs/order-app.md`.
+
+### 번호 호출 API (연동 키)
+
+| 요청 | 본문 | 응답 |
+| --- | --- | --- |
+| `GET /api/menuboard/pos/calls` | | `{ "store": { "id", "name" }, "calls": [ { "number": 12, "at": 1795651200000 } ] }` (최근 것부터, 최대 30개) |
+| `POST /api/menuboard/pos/calls` | `{ "number": 12, "action": "call" }` | `{ "number", "action", "result", "calls" }` |
+
+`action`: `call`(기본, 3초 안에 같은 번호면 `result: "ignored"`) · `recall`(이미 있어도 맨 앞으로, TV가 다시 깜빡임) · `cancel`(TV에서 빼기, 없으면 `result: "absent"`). `result`는 `called`·`ignored`·`removed`·`absent`. 번호는 1~9999 정수(숫자 글자도 받음), 틀리면 400. 가맹점 키는 자기 매장 번호만 다룹니다. 로그인이 필요 없어서 매장 계정 로그인이 만료돼도(B-12) 번호를 부를 수 있습니다.
 
 ## 보드 앱 빌드와 설치
 
