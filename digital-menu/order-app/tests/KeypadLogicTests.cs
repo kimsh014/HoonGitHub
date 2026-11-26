@@ -37,6 +37,7 @@ namespace MenuBoardKeypad.Tests
                     case '+': key = PadKey.Plus; break;
                     case '-': key = PadKey.Minus; break;
                     case '*': key = PadKey.Star; break;
+                    case '<': key = PadKey.Back; break;
                     default: key = (PadKey)(c - '0'); break;
                 }
                 now = now.AddMilliseconds(200);
@@ -87,8 +88,12 @@ namespace MenuBoardKeypad.Tests
             k = Fresh(12);
             Type(k, "123.");
             Eq(k.Buffer, "12", ". 한 자리 지움");
+            Type(k, "3<");
+            Eq(k.Buffer, "12", "Backspace 한 자리 지움");
+            True(k.HasInput, "치던 것 있음");
             Type(k, "*");
             Eq(k.Buffer, "", "* 모두 지움");
+            True(!k.HasInput, "치던 것 없음");
             NotSent(Type(k, "E"), "빈 Enter");
             NotSent(Type(k, "12345"), "다섯째 자리");
             Eq(k.Buffer, "1234", "4자리까지");
@@ -130,7 +135,10 @@ namespace MenuBoardKeypad.Tests
             Eq(k.InputText(), "", "입력 없음");
             Type(k, "-");
             Eq(k.InputText(), "취소 (15번)", "빼기 미리 보기");
-            Sent(Type(k, "E"), CallAction.Cancel, 15, "- Enter → 맨 앞 번호 빼기");
+            o = Type(k, "E");
+            NotSent(o, "- Enter만으로는 바로 빼지 않고 물음(M-29)");
+            True(o.Message.Contains("15"), "빼기 확인 문장에 번호");
+            Sent(Type(k, "E"), CallAction.Cancel, 15, "- Enter Enter → 맨 앞 번호 빼기");
             Sent(Type(k, "-14E"), CallAction.Cancel, 14, "- 번호 Enter");
             NotSent(Type(k, "-99E"), "TV에 없는 번호는 빼지 않음");
             Type(k, "*");
@@ -143,14 +151,15 @@ namespace MenuBoardKeypad.Tests
             Sent(Type(k, "+14E"), CallAction.Recall, 14, "+ 번호 Enter");
             NotSent(Type(k, "+14E"), "3초 안 다시 부르기도 한 번");
 
-            // 서버에 못 보냈을 때: Enter 한 번이면 다시 보냄(확인 다시 안 물음)
-            k = Fresh(101);
-            Type(k, "201E");
-            o = Type(k, "E");
-            Sent(o, CallAction.Call, 201, "확인 후 보냄");
+            // 서버에 못 보냈을 때: 입력 칸은 그대로(다음 번호를 덮어쓰지 않음), 같은 번호를 바로 다시 쳐도 막지 않음
+            k = Fresh();
+            o = Type(k, "21E");
+            Sent(o, CallAction.Call, 21, "보냄");
+            Type(k, "2");
             k.SendFailed(o.Action, o.Number, now);
-            Eq(k.Buffer, "201", "실패하면 입력 되살림");
-            Sent(Type(k, "E"), CallAction.Call, 201, "실패 후 Enter로 다시 보냄");
+            Eq(k.Buffer, "2", "실패해도 치던 입력은 그대로");
+            Type(k, "*");
+            Sent(Type(k, "21E"), CallAction.Call, 21, "실패한 번호는 3초 안이라도 다시 칠 수 있음");
 
             // 10초 손 떼면 입력 비움
             k = Fresh();

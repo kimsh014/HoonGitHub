@@ -1,7 +1,8 @@
 // 숫자패드 키를 어느 창에 포커스가 있든 받는 저수준 키보드 훅(WH_KEYBOARD_LL).
 // - 키를 가상 키 코드가 아니라 스캔 코드로 구별한다. 그래서 Num Lock이 꺼져 있어도(End·↓ 같은 키로 와도) 숫자로 읽는다(M-14).
 // - 받은 키는 판매 프로그램에 넘기지 않는다(숫자가 판매 프로그램 입력칸에 새어 들어가지 않게).
-// - 다른 프로그램(화상 키보드·자동 입력)이 만들어 낸 키는 건드리지 않는다.
+// - 다른 프로그램(화상 키보드·자동 입력)이 만들어 낸 키, Alt를 누른 채 친 키(Alt+숫자 문자 입력, 일부 바코드 스캐너)는 건드리지 않는다.
+// - Backspace는 숫자패드 키가 아니지만 키패드에 흔해서, 번호 창에 치던 것이 있을 때만 가져간다(handler가 정함).
 // 한계: Windows 사용자 모드에서는 키를 '어느 키보드에서 왔는지'로 막을 수 없다. 숫자패드가 달린 일반 키보드를 판매
 // 프로그램에 쓰는 매장은 설정에서 '숫자패드 가로채기'를 끄고 화면 단추로 부른다(docs/order-app.md).
 using System;
@@ -31,6 +32,8 @@ namespace MenuBoardKeypad
         static extern bool UnhookWindowsHookEx(IntPtr hhk);
         [DllImport("user32.dll")]
         static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")]
+        static extern short GetAsyncKeyState(int vKey);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         static extern IntPtr GetModuleHandle(string name);
 
@@ -47,15 +50,19 @@ namespace MenuBoardKeypad
 
         public bool Installed { get { return hook != IntPtr.Zero; } }
 
-        // 설치(이미 있으면 새로 건다). Windows는 응답이 늦은 훅을 말없이 떼어 버리기도 해서 가끔 다시 건다.
+        // 설치(이미 있으면 새로 건다). Windows는 응답이 늦은 훅을 말없이 떼어 버리기도 해서 1분마다 다시 건다.
+        // 새 훅을 먼저 걸고 옛 훅을 떼므로 그 사이에 키가 판매 프로그램으로 새지 않는다.
         public void Install()
         {
-            Uninstall();
+            IntPtr fresh;
             using (Process me = Process.GetCurrentProcess())
             {
-                hook = SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(me.MainModule.ModuleName), 0);
+                fresh = SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(me.MainModule.ModuleName), 0);
             }
-            if (hook == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            if (fresh == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            IntPtr old = hook;
+            hook = fresh;
+            if (old != IntPtr.Zero) UnhookWindowsHookEx(old);
         }
 
         public void Uninstall()
@@ -93,6 +100,7 @@ namespace MenuBoardKeypad
                 case 0x4A: key = PadKey.Minus; return true;
                 case 0x4E: key = PadKey.Plus; return true;
                 case 0x37: key = PadKey.Star; return true;
+                case 0x0E: key = PadKey.Back; return true; // Backspace(키패드·일반 키보드 같음)
                 default: return false; // Num Lock(0x45)은 그대로 둔다
             }
         }
@@ -105,7 +113,7 @@ namespace MenuBoardKeypad
                 {
                     KBDLLHOOKSTRUCT k = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
                     int msg = wParam.ToInt32();
-                    bool down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+                    bool down = msg == WM_KEYDOWN && (GetAsyncKeyState(0x12 /* VK_MENU */) & 0x8000) == 0; // Alt+숫자는 넘김
                     bool up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
                     uint code = k.scanCode | ((k.flags & LLKHF_EXTENDED) != 0 ? 0x100u : 0u);
                     PadKey key;

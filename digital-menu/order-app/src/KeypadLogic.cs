@@ -2,8 +2,8 @@
 // 키(숫자패드 기준):
 //   숫자 + Enter      번호 부르기 (TV에 띄움)
 //   +  [숫자] Enter   다시 부르기 (숫자를 빼면 TV 맨 앞 번호)
-//   -  [숫자] Enter   TV에서 빼기 = 방금 완료 취소 (숫자를 빼면 TV 맨 앞 번호)
-//   .                 한 자리 지움        *  /   입력 모두 지움
+//   -  [숫자] Enter   TV에서 빼기 = 방금 완료 취소 (숫자를 빼면 TV 맨 앞 번호, 이때는 Enter 한 번 더로 확인)
+//   .  (Backspace)    한 자리 지움        *  /   입력 모두 지움
 // 실수 막기(위험 점검표):
 //   M-13·M-26  최근 번호와 많이 떨어진 번호, 이미 TV에 떠 있는 번호는 "Enter 한 번 더"로 확인
 //   M-15       3초 안에 같은 번호를 또 부르면 한 번으로 침(서버도 한 번 더 막음)
@@ -14,7 +14,7 @@ using System.Collections.Generic;
 
 namespace MenuBoardKeypad
 {
-    public enum PadKey { D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, Enter, Dot, Plus, Minus, Star, Slash }
+    public enum PadKey { D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, Enter, Dot, Plus, Minus, Star, Slash, Back }
 
     public enum CallAction { Call, Recall, Cancel }
 
@@ -58,6 +58,8 @@ namespace MenuBoardKeypad
         List<KeyValuePair<int, DateTime>> history = new List<KeyValuePair<int, DateTime>>(); // 최근에 부른 번호(TV에서 빠진 뒤에도 기억)
 
         public string Buffer { get { return buffer; } }
+        // 치던 것이 있는지(Backspace를 판매 프로그램 대신 가져갈지 정할 때 쓴다)
+        public bool HasInput { get { return buffer.Length > 0 || mode != CallAction.Call; } }
         public CallAction Mode { get { return mode; } }
         public IList<int> OnScreen { get { return onScreen.AsReadOnly(); } }
 
@@ -122,6 +124,7 @@ namespace MenuBoardKeypad
             switch (key)
             {
                 case PadKey.Dot:
+                case PadKey.Back:
                     if (buffer.Length > 0) buffer = buffer.Substring(0, buffer.Length - 1);
                     else mode = CallAction.Call;
                     hasConfirm = false;
@@ -175,7 +178,10 @@ namespace MenuBoardKeypad
             if (mode == CallAction.Cancel)
             {
                 if (!onScreen.Contains(n)) return Say(Tone.Warn, n + "번은 TV에 없습니다. 번호를 확인하세요.");
-                return Send(CallAction.Cancel, n, now);
+                if (typed) return Send(CallAction.Cancel, n, now);
+                // 번호 없이 "- Enter"는 + 옆 키를 잘못 누른 것일 수 있어 한 번 더 묻는다(M-29)
+                if (hasConfirm && confirmAction == CallAction.Cancel && confirmNumber == n && now <= confirmUntil) return Send(CallAction.Cancel, n, now);
+                return Ask(CallAction.Cancel, n, now, n + "번을 TV에서 뺄까요? 빼려면 Enter 한 번 더, 아니면 * 키.");
             }
 
             if (lastSentNumber == n && now - lastSentAt < SameCallWindow)
@@ -234,17 +240,11 @@ namespace MenuBoardKeypad
             return o;
         }
 
-        // 서버에 못 보냈을 때: 입력을 되살려 Enter 한 번이면 다시 보내게 한다(확인은 다시 묻지 않음).
+        // 서버에 못 보냈을 때. 다시 보내기는 번호 창이 '못 보낸 번호' 목록으로 맡는다(서버가 돌아오면 저절로).
+        // 입력 칸은 건드리지 않는다(직원이 치고 있던 다음 번호를 덮어쓰지 않게).
         public void SendFailed(CallAction action, int n, DateTime now)
         {
-            buffer = n.ToString();
-            mode = action == CallAction.Call ? CallAction.Call : action;
-            lastSentNumber = -1;
-            lastKey = now;
-            hasConfirm = true;
-            confirmAction = action;
-            confirmNumber = n;
-            confirmUntil = now + InputTimeout;
+            if (lastSentNumber == n) lastSentNumber = -1;
         }
 
         // 서버가 받았을 때. result: called | ignored | removed | absent
@@ -259,7 +259,7 @@ namespace MenuBoardKeypad
             {
                 case "called": return n + "번을 TV에 " + (action == CallAction.Recall ? "다시 " : "") + "띄웠습니다.";
                 case "ignored": return n + "번은 방금 불러서 한 번만 띄웠습니다.";
-                case "removed": return n + "번을 TV에서 뺐습니다.";
+                case "removed": return n + "번을 TV에서 뺐습니다. 되돌리려면 " + n + " Enter.";
                 case "absent": return n + "번은 이미 TV에 없습니다.";
                 default: return n + "번: " + result;
             }

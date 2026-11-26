@@ -1,7 +1,9 @@
 // 번호 창. 판매 프로그램 옆에 항상 위로 떠 있는 좁은 창이다.
 // - 눌러도 판매 프로그램의 포커스를 빼앗지 않는다(WS_EX_NOACTIVATE). 화상 키보드처럼 동작한다.
 // - 닫기(X)는 최소화로 바뀐다. 최소화되어 있어도 숫자패드는 받고, 키가 들어오면 창을 다시 보인다(M-16).
-// - 서버와 이야기는 작업 스레드 하나가 순서대로 한다(보내기가 먼저, 없으면 3초마다 TV 번호 목록 확인).
+// - 서버와 이야기는 작업 스레드 하나가 순서대로 한다(보내기가 먼저, 없으면 10초마다 TV 번호 목록 확인,
+//   끊겼거나 못 보낸 번호가 있으면 3초마다). 서버 요청 기록이 쌓이지 않게 평소에는 느리게 묻는다.
+// - 못 보낸 번호는 '못 보낸 번호' 목록에 두고, 서버가 돌아오면 저절로 보낸다(2분 넘은 것은 버리고 알림).
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -15,8 +17,13 @@ namespace MenuBoardKeypad
 {
     public sealed class MainForm : Form
     {
-        const int PollMs = 3000;
-        static readonly TimeSpan RehookEvery = TimeSpan.FromMinutes(5);
+        const int PollMs = 10000, FastPollMs = 3000;
+        static readonly TimeSpan RehookEvery = TimeSpan.FromMinutes(1);
+        static readonly TimeSpan RetryFor = TimeSpan.FromMinutes(2);
+
+        sealed class Pending { public Outcome Job; public DateTime At; public bool Queued; }
+        readonly List<Pending> pending = new List<Pending>(); // 화면 스레드에서만 만진다
+        volatile bool fastPoll;
 
         public int ExitCode = 1; // 0이면 지킴이도 멈춘다
         bool exitRequested;
@@ -65,6 +72,9 @@ namespace MenuBoardKeypad
             BackColor = Color.White;
             TopMost = settings.AlwaysOnTop;
             using (Graphics g = CreateGraphics()) s = g.DpiX / 96f;
+            // 1366×768에 배율 125%처럼 창이 화면보다 커지면 화면에 맞게 줄인다
+            int room = Screen.PrimaryScreen.WorkingArea.Height - SystemInformation.CaptionHeight - 16;
+            if (640 * s > room) s = Math.Max(0.6f, room / 640f);
             BuildUi();
             PlaceWindow();
 
@@ -224,6 +234,7 @@ namespace MenuBoardKeypad
         bool OnHookKey(PadKey key, bool repeat)
         {
             if (!settings.CaptureNumpad || settingsOpen) return false;
+            if (key == PadKey.Back && !logic.HasInput) return false; // 치던 번호가 없으면 Backspace는 판매 프로그램 것
             if (!repeat) BeginInvoke(new MethodInvoker(delegate { HandleKey(key); }));
             return true;
         }
@@ -235,7 +246,12 @@ namespace MenuBoardKeypad
             if (WindowState == FormWindowState.Minimized) ShowWindow(Handle, 4 /* SW_SHOWNOACTIVATE */);
             Outcome o = logic.Press(key, now);
             if (o.Message != null) Notify(o.Tone, o.Message);
-            if (o.Send) jobs.Add(o);
+            if (o.Send)
+            {
+                // 같은 번호가 못 보낸 목록에 있으면 이번 것으로 대신한다
+                pending.RemoveAll(delegate (Pending p) { return p.Job.Number == o.Number && !p.Queued; });
+                jobs.Add(o);
+            }
             Refresh2();
         }
 
@@ -295,7 +311,18 @@ namespace MenuBoardKeypad
                 lblStatus.Text = lastServerOk == DateTime.MinValue && serverError == null ? "● 서버 연결 중…" : "● 서버 연결 안 됨";
                 lblStatus.ForeColor = Bad;
             }
-            string capture = settings.CaptureNumpad ? (hook.Installed ? "" : "숫자패드 받기 꺼짐(오류) · ") : "숫자패드 받기 꺼짐 · ";
+            BackColor = connected || settings.Key.Length == 0 ? Color.White : Color.FromArgb(255, 228, 228); // 끊기면 창 전체를 붉게
+            if (pending.Count > 0)
+            {
+                List<string> nums = new List<string>();
+                foreach (Pending p in pending) nums.Add((p.Job.Action == CallAction.Cancel ? "-" : "") + p.Job.Number);
+                lblNumLock.Text = "못 보낸 번호: " + string.Join(", ", nums.ToArray()) + " (서버가 돌아오면 저절로 보냄)";
+                lblNumLock.ForeColor = Bad;
+                return;
+            }
+            lblNumLock.ForeColor = Warn;
+            string capture = settingsOpen ? "설정 중: 키패드가 판매 프로그램으로 갑니다 · "
+                : settings.CaptureNumpad ? (hook.Installed ? "" : "숫자패드 받기 꺼짐(오류) · ") : "숫자패드 받기 꺼짐 · ";
             lblNumLock.Text = capture + (Control.IsKeyLocked(Keys.NumLock) ? "" : "Num Lock 꺼짐(그대로 써도 됩니다)");
         }
 
@@ -310,8 +337,9 @@ namespace MenuBoardKeypad
             {
                 SetWindowPos(Handle, (IntPtr)(-1) /* HWND_TOPMOST */, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 /* NOSIZE|NOMOVE|NOACTIVATE */);
             }
-            // Windows가 응답이 늦은 훅을 말없이 뗄 수 있어 가끔 다시 건다(키를 누르는 중에는 하지 않음).
-            if (settings.CaptureNumpad && now - lastHookAt > RehookEvery && now - lastKeyAt > TimeSpan.FromSeconds(30)) ApplyCapture();
+            // Windows가 응답이 늦은 훅을 말없이 뗄 수 있어 1분마다 다시 건다(새 훅을 먼저 걸어 빈틈 없음).
+            if (settings.CaptureNumpad && !settingsOpen && now - lastHookAt > RehookEvery) ApplyCapture();
+            DropOldPending(now);
             Refresh2();
         }
 
@@ -322,7 +350,7 @@ namespace MenuBoardKeypad
             {
                 Outcome job;
                 bool got;
-                try { got = jobs.TryTake(out job, PollMs); }
+                try { got = jobs.TryTake(out job, fastPoll ? FastPollMs : PollMs); }
                 catch (Exception) { return; }
                 BoardClient c = client;
                 if (got)
@@ -359,6 +387,7 @@ namespace MenuBoardKeypad
         void OnSent(Outcome job, CallsResult r)
         {
             DateTime now = DateTime.Now;
+            pending.RemoveAll(delegate (Pending p) { return p.Job == job; });
             logic.SendDone(job.Action, job.Number, r.Result, now);
             Log.Write(job.Action + " " + job.Number + " → " + r.Result);
             Notify(r.Result == "called" || r.Result == "removed" ? Tone.Ok : Tone.Info, KeypadLogic.ResultMessage(job.Action, job.Number, r.Result));
@@ -369,17 +398,51 @@ namespace MenuBoardKeypad
         {
             ServerException se = ex as ServerException;
             Log.Write(job.Action + " " + job.Number + " 실패: " + ex.Message);
+            Pending mine = pending.Find(delegate (Pending p) { return p.Job == job; });
             if (se != null && se.Status >= 400 && se.Status < 500 && se.Status != 401 && se.Status != 429)
             {
+                if (mine != null) pending.Remove(mine);
                 Notify(Tone.Error, job.Number + "번: " + ex.Message); // 요청 자체가 틀림. 다시 보내도 같다.
             }
             else
             {
                 logic.SendFailed(job.Action, job.Number, DateTime.Now);
-                Notify(Tone.Error, job.Number + "번을 " + (job.Action == CallAction.Cancel ? "빼지" : "부르지") + " 못했습니다. " + ex.Message + " 다시 보내려면 Enter.");
+                if (mine == null)
+                {
+                    mine = new Pending();
+                    mine.Job = job;
+                    mine.At = DateTime.Now;
+                    pending.Add(mine);
+                    Notify(Tone.Error, job.Number + "번을 " + (job.Action == CallAction.Cancel ? "빼지" : "부르지") + " 못했습니다. " + ex.Message + " 서버가 돌아오면 저절로 보냅니다.");
+                }
+                mine.Queued = false;
             }
             if (se == null || se.Status == 0 || se.Status == 401) serverError = ex.Message;
+            fastPoll = pending.Count > 0 || serverError != null;
             Refresh2();
+        }
+
+        // 서버가 돌아오면 못 보낸 번호를 순서대로 다시 보낸다
+        void RetryPending()
+        {
+            DropOldPending(DateTime.Now);
+            foreach (Pending p in pending)
+            {
+                if (p.Queued) continue;
+                p.Queued = true;
+                jobs.Add(p.Job);
+            }
+        }
+
+        // 2분 넘게 못 보낸 번호는 버린다(손님이 이미 받아 갔거나 직원이 다시 불렀을 것). 버린 것은 크게 알린다.
+        void DropOldPending(DateTime now)
+        {
+            List<Pending> old = pending.FindAll(delegate (Pending p) { return !p.Queued && now - p.At > RetryFor; });
+            if (old.Count == 0) return;
+            List<string> nums = new List<string>();
+            foreach (Pending p in old) { pending.Remove(p); nums.Add(p.Job.Number.ToString()); Log.Write("2분 넘게 못 보내 버림: " + p.Job.Action + " " + p.Job.Number); }
+            Notify(Tone.Error, string.Join(", ", nums.ToArray()) + "번은 2분 넘게 못 보내 지웠습니다. 필요하면 다시 부르세요.");
+            messageUntil = now.AddSeconds(60);
         }
 
         void OnPolled(CallsResult r, Exception ex)
@@ -388,12 +451,15 @@ namespace MenuBoardKeypad
             {
                 if (serverError == null) Log.Write("서버 연결 안 됨: " + ex.Message);
                 serverError = ex.Message;
+                fastPoll = true;
                 if (DateTime.Now > messageUntil || lblMessage.ForeColor != Bad) { lblMessage.Text = ex.Message; lblMessage.ForeColor = Bad; messageUntil = DateTime.Now.AddSeconds(5); }
                 Refresh2();
                 return;
             }
             if (serverError != null) Log.Write("서버 다시 연결됨");
             serverError = null;
+            if (pending.Count > 0) RetryPending();
+            fastPoll = pending.Count > 0;
             lastServerOk = DateTime.Now;
             if (r.StoreName != null) storeName = r.StoreName;
             logic.SetOnScreen(r.Numbers, DateTime.Now);
@@ -437,7 +503,9 @@ namespace MenuBoardKeypad
         void OpenSettings()
         {
             if (settingsOpen) return;
-            settingsOpen = true; // 설정 창이 열린 동안은 숫자패드를 가로채지 않는다(칸에 숫자를 넣을 수 있게)
+            settingsOpen = true; // 설정 창이 열린 동안은 숫자패드를 가로채지 않는다(칸에 숫자를 넣을 수 있게, 연결 확인 중 키보드가 멈추지 않게)
+            hook.Uninstall();
+            Refresh2();
             try
             {
                 using (SettingsForm f = new SettingsForm(settings))
@@ -463,7 +531,12 @@ namespace MenuBoardKeypad
                     Refresh2();
                 }
             }
-            finally { settingsOpen = false; }
+            finally
+            {
+                settingsOpen = false;
+                if (!exitRequested) ApplyCapture();
+                Refresh2();
+            }
         }
 
         protected override void OnResizeEnd(EventArgs e)

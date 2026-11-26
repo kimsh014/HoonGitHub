@@ -1,12 +1,44 @@
 // 설정 창: 서버 주소, 연동 키, 숫자패드 가로채기, 항상 위, 소리, 멀리 떨어진 번호 확인 기준, 연결 확인, 앱 끝내기.
+// 열린 동안은 키패드가 판매 프로그램으로 가므로, 2분 동안 손대지 않으면 저장하지 않고 닫는다.
 using System;
 using System.Drawing;
 using System.Windows.Forms;
 
 namespace MenuBoardKeypad
 {
-    public sealed class SettingsForm : Form
+    public sealed class SettingsForm : Form, IMessageFilter
     {
+        static readonly TimeSpan IdleClose = TimeSpan.FromMinutes(2);
+        DateTime lastTouch = DateTime.Now;
+        Timer idle;
+
+        // 이 창의 키 입력·마우스 누름을 손댄 것으로 친다
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (m.Msg == 0x0100 || m.Msg == 0x0201 || m.Msg == 0x0204) lastTouch = DateTime.Now; // KEYDOWN, LBUTTONDOWN, RBUTTONDOWN
+            return false;
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            Application.AddMessageFilter(this);
+            idle = new Timer();
+            idle.Interval = 1000;
+            idle.Tick += delegate
+            {
+                if (DateTime.Now - lastTouch > IdleClose) { DialogResult = DialogResult.Cancel; Close(); }
+            };
+            idle.Start();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            Application.RemoveMessageFilter(this);
+            if (idle != null) idle.Dispose();
+            base.OnFormClosed(e);
+        }
+
         public Settings Result;
         public bool ExitRequested;
 
