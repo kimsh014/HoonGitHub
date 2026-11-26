@@ -41,7 +41,8 @@ UI팀은 코드를 고치지 않고 **테마 파일 하나**(`server/pb_public/t
 | `docs/themes/` 안내·스크린샷 | ✅ 고침 |
 | `server/pb_public/index.html` | ❌ 개발팀 (배치·테마 값 목록) |
 | `server/pb_public/api.js`, `board.js` | ❌ 개발팀 (서버 연결) |
-| `server/pb_public/admin.html`, `devices.html` | ❌ 개발팀 (수정 화면) |
+| `server/pb_public/admin.html` | 테마 작업에서는 건드리지 않음 (수정 화면은 `ui-prompt.md` B의 UI 담당 작업으로 따로 진행) |
+| `server/pb_public/devices.html` | ❌ 개발팀 (TV 원격 관리) |
 | `server/pb_hooks/`, `server/pb_migrations/` | ❌ 서버 |
 | `board-app/`, `order-app/` | ❌ TV 앱, 번호 처리 앱 |
 | `ui-prompt.md` | ❌ 화면 계약 (바꾸고 싶으면 제안) |
