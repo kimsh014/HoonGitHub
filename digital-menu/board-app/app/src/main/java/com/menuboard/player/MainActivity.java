@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -24,14 +26,18 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
 import java.io.File;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.util.List;
 
 /** 메뉴판 웹 화면을 전체 화면 WebView로 띄우는 플레이어. 홈 앱으로 지정하면 부팅 때 바로 뜬다. */
 public class MainActivity extends Activity {
     private static final String TAG = "MenuBoard";
     private static final long SAVE_DELAY_MS = 3000; // rendered() 뒤 사진이 다 뜰 시간
     private static final long POLL_MS = 15000;      // 저장 화면을 띄운 동안 서버 확인 주기
+    private static final long WATCH_MS = 30000;     // 실제 화면을 띄운 동안 서버 확인 주기
+    private static final long LONG_PRESS_MS = 2000; // 리모컨 확인 버튼을 이만큼 누르면 설정 화면
+    private static final int FIND_AFTER_FAILS = 4;  // 이만큼 연달아 실패하면 서버 주소가 바뀌었는지 망을 찾아본다
+    private static final long FIND_EVERY_MS = 10 * 60 * 1000;
+    private static final long UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
@@ -39,12 +45,19 @@ public class MainActivity extends Activity {
     private FrameLayout root;
     private WebView web;
     private boolean offline; // 저장 화면 또는 "연결하는 중" 안내를 띄운 상태
+    private boolean live;    // 실제 화면을 띄운 상태
+    private boolean lost;    // 실제 화면을 띄운 뒤 서버 확인이 실패한 적이 있음 → 다시 붙으면 새로 불러온다
+    private boolean resumed;
+    private int fails;
+    private long lastFind, lastUpdateCheck;
+    private ConnectivityManager.NetworkCallback netCallback;
 
     private final Runnable poll = this::checkServer;
+    private final Runnable longOk = this::openSettings;
 
     // ponytail: 시간 지연만으로 사진 로드를 기다린다. 사진이 아주 많아 3초를 넘기면 일부가 빠진 채 저장될 수 있음 — 웹 화면이 사진 로드 완료 후 rendered()를 부르게 바꾸면 해결.
     private final Runnable saveArchive = () -> {
-        if (offline || web == null) return;
+        if (!live || lost || web == null) return;
         File tmp = new File(getFilesDir(), "last.tmp.mht");
         // 임시 파일에 쓴 뒤 바꿔 넣어, 저장 도중 꺼져도 이전 화면이 깨지지 않게 한다
         web.saveWebArchive(tmp.getPath(), false, path -> {
@@ -65,6 +78,30 @@ public class MainActivity extends Activity {
         setContentView(root);
         applyIntent(getIntent());
         createWebView();
+        registerNetwork();
+    }
+
+    /** 와이파이·랜이 다시 잡히면 15~30초를 기다리지 않고 바로 서버를 확인한다. */
+    private void registerNetwork() {
+        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        if (cm == null) return;
+        netCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network n) {
+                main.post(() -> {
+                    if (!resumed || server() == null) return;
+                    Log.i(TAG, "네트워크 연결됨, 서버 확인");
+                    main.removeCallbacks(poll);
+                    main.postDelayed(poll, 2000); // 주소를 받을 틈을 준다
+                });
+            }
+        };
+        try {
+            cm.registerDefaultNetworkCallback(netCallback);
+        } catch (RuntimeException e) {
+            netCallback = null;
+            Log.w(TAG, "네트워크 알림 등록 실패, 주기 확인만 합니다", e);
+        }
     }
 
     @Override
@@ -78,7 +115,17 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         start();
+    }
+
+    /** 설정 화면 등을 띄운 동안에는 서버 확인을 멈춘다. */
+    @Override
+    protected void onPause() {
+        super.onPause();
+        resumed = false;
+        main.removeCallbacks(poll);
+        main.removeCallbacks(longOk);
     }
 
     @Override
@@ -93,12 +140,25 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
-        // WebView보다 먼저 가로챈다: 키보드·리모컨 MENU 키로 설정 열기
-        if (e.getKeyCode() == KeyEvent.KEYCODE_MENU) {
-            if (e.getAction() == KeyEvent.ACTION_UP) openSettings();
-            return true;
+        // WebView보다 먼저 가로챈다. 메뉴판 화면은 키 입력을 쓰지 않는다.
+        switch (e.getKeyCode()) {
+            case KeyEvent.KEYCODE_MENU:     // 키보드·일부 리모컨
+            case KeyEvent.KEYCODE_SETTINGS: // 안드로이드 TV 리모컨의 설정(톱니) 버튼
+                if (e.getAction() == KeyEvent.ACTION_UP) openSettings();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER: // 리모컨 확인 버튼을 2초 누르면 설정
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                    main.removeCallbacks(longOk);
+                    main.postDelayed(longOk, LONG_PRESS_MS);
+                } else if (e.getAction() == KeyEvent.ACTION_UP) {
+                    main.removeCallbacks(longOk);
+                }
+                return true;
+            default:
+                return super.dispatchKeyEvent(e);
         }
-        return super.dispatchKeyEvent(e);
     }
 
     @SuppressWarnings("deprecation")
@@ -110,11 +170,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         main.removeCallbacksAndMessages(null);
+        if (netCallback != null) getSystemService(ConnectivityManager.class).unregisterNetworkCallback(netCallback);
         if (web != null) web.destroy();
         super.onDestroy();
     }
 
     private void openSettings() {
+        main.removeCallbacks(longOk);
         startActivity(new Intent(this, SettingsActivity.class));
     }
 
@@ -184,6 +246,8 @@ public class MainActivity extends Activity {
                 root.removeView(v);
                 v.destroy();
                 if (v == web) {
+                    live = false;
+                    offline = false;
                     createWebView();
                     start();
                 }
@@ -198,53 +262,115 @@ public class MainActivity extends Activity {
         main.removeCallbacks(poll);
         main.removeCallbacks(saveArchive);
         if (server() == null) {
-            openSettings();
+            findFirstServer();
             return;
         }
+        live = false; // 설정이 바뀌었을 수 있으니 실제 화면을 새로 불러온다
         checkServer();
     }
 
-    /** /api/health 가 200이면 실제 주소를, 아니면 저장 화면을 띄운다. */
-    private void checkServer() {
-        String health = "http://" + server() + "/api/health";
+    /** 처음 켰을 때: 같은 망에서 메뉴판 서버를 찾아 하나뿐이면 바로 쓰고, 아니면 설정 화면을 연다. */
+    private void findFirstServer() {
+        showMessage("매장 서버를 찾는 중…", "리모컨 확인 버튼을 2초 누르면 설정 화면이 열립니다");
         new Thread(() -> {
-            boolean ok;
-            try {
-                HttpURLConnection c = (HttpURLConnection) new URL(health).openConnection();
-                c.setConnectTimeout(3000);
-                c.setReadTimeout(3000);
-                ok = c.getResponseCode() == 200;
-                c.disconnect();
-            } catch (Exception e) {
-                ok = false;
-            }
-            boolean alive = ok;
+            List<String> found = Net.discover(this);
             main.post(() -> {
-                if (alive) {
-                    offline = false;
-                    web.loadUrl(liveUrl());
-                } else if (!offline) {
-                    showOffline();
+                if (!resumed) return;
+                if (found.size() == 1 && save(prefs, found.get(0), "1", "100") == null) {
+                    Log.i(TAG, "서버를 찾았습니다: " + found.get(0));
+                    start();
                 } else {
-                    main.postDelayed(poll, POLL_MS);
+                    openSettings();
                 }
             });
         }).start();
     }
 
+    /**
+     * /api/health 가 200이면 실제 주소를 (아직 안 띄웠거나 끊겼다 붙었으면) 다시 띄우고, 아니면 저장 화면을 띄운다.
+     * 실제 화면을 띄운 동안에도 30초마다 확인한다. 끊긴 동안 웹 화면은 마지막 내용을 그대로 보여 준다.
+     */
+    private void checkServer() {
+        String server = server();
+        if (server == null) return;
+        new Thread(() -> {
+            boolean ok = Net.healthy(server);
+            main.post(() -> onHealth(server, ok));
+        }).start();
+    }
+
+    private void onHealth(String server, boolean ok) {
+        if (!resumed || !server.equals(server())) return; // 그 사이 설정이 바뀌었거나 화면을 떠났다
+        main.removeCallbacks(poll);
+        if (ok) {
+            fails = 0;
+            if (!live || lost) {
+                Log.i(TAG, lost ? "서버에 다시 연결됨, 화면을 새로 불러옵니다" : "서버 연결됨");
+                offline = false;
+                live = true;
+                lost = false;
+                web.loadUrl(liveUrl());
+            }
+            maybeCheckUpdate(server);
+            main.postDelayed(poll, WATCH_MS);
+            return;
+        }
+        fails++;
+        if (live) {
+            lost = true; // 화면은 그대로 두고, 다시 붙으면 새로 불러온다
+            main.postDelayed(poll, WATCH_MS / 2);
+        } else if (!offline) {
+            showOffline(); // 다음 확인을 스스로 예약한다
+        } else {
+            main.postDelayed(poll, POLL_MS);
+        }
+        maybeFindMovedServer(server);
+    }
+
+    /** 공유기를 바꾸거나 POS기 주소가 바뀐 경우: 오래 끊기면 같은 망에서 서버를 다시 찾는다. 하나만 찾았을 때만 바꾼다. */
+    private void maybeFindMovedServer(String server) {
+        long now = System.currentTimeMillis();
+        if (fails < FIND_AFTER_FAILS || now - lastFind < FIND_EVERY_MS) return;
+        lastFind = now;
+        new Thread(() -> {
+            List<String> found = Net.discover(this);
+            main.post(() -> {
+                if (found.size() != 1 || found.get(0).equals(server) || !server.equals(server())) return;
+                if (save(prefs, found.get(0), String.valueOf(prefs.getInt("screen", 1)),
+                        String.valueOf(prefs.getInt("zoom", 100))) != null) return;
+                Log.i(TAG, "서버 주소가 바뀌었습니다: " + server + " → " + found.get(0));
+                if (resumed) start();
+            });
+        }).start();
+    }
+
+    /** 새 버전이 있는지만 확인해 둔다. 설치는 설정 화면에서 사람이 한다(손님 앞에서 확인 창이 뜨지 않게). */
+    private void maybeCheckUpdate(String server) {
+        long now = System.currentTimeMillis();
+        if (now - lastUpdateCheck < UPDATE_CHECK_MS) return;
+        lastUpdateCheck = now;
+        new Thread(() -> Updater.check(this, server)).start();
+    }
+
     private void showOffline() {
         offline = true;
+        live = false;
+        lost = false;
         if (archive.exists()) {
             web.loadUrl(Uri.fromFile(archive).toString());
         } else {
-            String html = "<html><body style='background:#000;color:#fff;font-family:sans-serif;"
-                    + "display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;margin:0'>"
-                    + "<h1 style='font-size:6vw'>서버에 연결하는 중…</h1>"
-                    + "<p style='font-size:3vw'>" + TextUtils.htmlEncode(liveUrl()) + "</p></body></html>";
-            web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
+            showMessage("서버에 연결하는 중…", liveUrl());
         }
         main.removeCallbacks(poll);
         main.postDelayed(poll, POLL_MS);
+    }
+
+    private void showMessage(String title, String detail) {
+        String html = "<html><body style='background:#000;color:#fff;font-family:sans-serif;"
+                + "display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;margin:0'>"
+                + "<h1 style='font-size:6vw'>" + TextUtils.htmlEncode(title) + "</h1>"
+                + "<p style='font-size:3vw'>" + TextUtils.htmlEncode(detail) + "</p></body></html>";
+        web.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
     }
 
     /** 웹 화면이 window.MenuBoardHost.rendered() 로 부른다. */

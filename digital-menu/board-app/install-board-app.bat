@@ -7,7 +7,14 @@ set "ADB=adb"
 where adb >nul 2>nul || set "ADB=%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"
 "%ADB%" devices
 "%ADB%" install -r menuboard-player.apk
+rem 부팅 때 자동 실행(다른 앱 위에 표시)과 매장 서버에서 받은 업데이트 설치를 허용한다.
+rem 리모컨만 있는 TV는 이 설정 화면이 숨겨져 있는 경우가 많아 여기서 해 둔다.
+"%ADB%" shell appops set com.menuboard.player SYSTEM_ALERT_WINDOW allow
+"%ADB%" shell appops set com.menuboard.player REQUEST_INSTALL_PACKAGES allow
+rem 홈 앱을 바꿀 수 있는 보드면 메뉴판을 홈 앱으로 둔다(구글 TV 등은 실패해도 괜찮다. 부팅 수신기로 뜬다).
+"%ADB%" shell cmd package set-home-activity com.menuboard.player/.MainActivity
 "%ADB%" shell am start -n com.menuboard.player/.MainActivity
 echo.
-echo 보드에 설정 화면이 뜨면 서버 주소, 화면 번호, 글자 크기 배율을 넣고 저장하세요.
+echo 보드가 같은 망의 매장 서버를 스스로 찾습니다. 못 찾으면 설정 화면이 뜹니다.
+echo 설정 화면: 리모컨 확인 버튼 2초 누르기. 서버 주소, 화면 번호, 글자 크기 배율을 넣고 저장하세요.
 pause

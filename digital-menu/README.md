@@ -22,7 +22,12 @@ POS PC (Windows)                               안드로이드 보드 → 35~66�
   - `pb_public/api.js`: 화면이 서버를 부르는 유일한 곳(로그인, 메뉴·구역·화면 저장, 품절, 번호 호출, `getBoard`, `onBoardChange` 실시간 구독).
   - `pb_public/board.js`: 메뉴판 화면 갱신 흐름. 주소 `/?screen=화면번호` (선택 `&zoom=글자배율%`, `&refresh=초`(기본 300), `&store=매장번호`(서버에 매장이 여럿일 때)). 데이터를 받으면 `index.html`의 `renderBoard(board, screenNo)`를 부릅니다.
   - `pb_public/index.html`, `admin.html`: 동작 확인용 시안입니다. UI 담당이 바꿀 화면이며 요구사항은 `../ui-prompt.md`에 있습니다.
-- **보드 앱 (`board-app/`)**: 메뉴판 주소를 전체 화면 WebView로 띄우는 안드로이드 앱(`com.menuboard.player`, minSdk 30). 홈 앱으로 지정하면 부팅 때 바로 뜹니다. 설정 화면에서 서버 주소, 화면 번호, 글자 크기 배율을 넣습니다. `/api/health`가 응답하지 않으면 마지막으로 저장한 화면을 띄우고 15초마다 다시 확인합니다.
+- **보드 앱 (`board-app/`)**: 메뉴판 주소를 전체 화면 WebView로 띄우는 안드로이드 앱(`com.menuboard.player`, minSdk 30). 안드로이드 TV와 일반 안드로이드 보드 둘 다 지원합니다.
+  - 켜기: 홈 앱으로 지정할 수 있는 보드는 홈 앱으로, 구글 TV처럼 홈 앱을 못 바꾸는 TV는 부팅 완료 알림으로 스스로 뜹니다(‘다른 앱 위에 표시’ 허용 필요, 설치 bat이 허용). 화면 꺼짐·화면 보호기는 막습니다.
+  - 리모컨: 메뉴판 화면에서 **확인 버튼 2초**(또는 MENU·설정 버튼)로 설정 화면. 설정 화면은 방향키와 확인만으로 움직입니다.
+  - 서버 찾기: 처음 켜면 같은 망(/24)에서 8090 포트의 메뉴판 서버(`/api/menuboard/store`가 200)를 찾아 하나뿐이면 바로 씁니다. 설정 화면의 ‘서버 자동 찾기’로도 찾습니다.
+  - 끊김: `/api/health`가 응답하지 않으면 마지막으로 저장한 화면을 띄우고 15초마다 다시 확인합니다. 실제 화면을 띄운 동안에도 30초마다 확인하고, 끊겼다 다시 붙으면 화면을 새로 불러옵니다. 와이파이·랜이 다시 잡히면 바로 확인합니다. 2분 넘게 끊기면 서버 주소가 바뀌었는지 망을 다시 찾아봅니다(10분에 한 번, 하나만 찾았을 때만 바꿈).
+  - 업데이트: 매장 서버의 `/updates/board-app.json`을 6시간마다 확인해 두고, 설정 화면의 ‘업데이트 확인·설치’로 설치합니다(아래 ‘보드 앱 업데이트’).
 - **`ui-prompt.md`**: 화면(UI) 작업 요구사항과 화면이 받는 데이터 계약.
 - **`index.html`** (이 폴더 맨 위): 서버 없이 메뉴를 코드에 적어 띄우는 초기 한 장짜리 메뉴판 시안.
 
@@ -49,9 +54,20 @@ POS PC (Windows)                               안드로이드 보드 → 35~66�
 
 1. **빌드** (Git Bash, Gradle 없이 Android SDK 도구만 사용): `board-app/build.sh`
    - 필요: Android SDK build-tools 36.0.0, platforms/android-37.0, JDK(기본값 Android Studio의 `jbr`). 경로는 `ANDROID_SDK`, `JDK_HOME`으로 바꿀 수 있습니다.
-   - 결과: `board-app/build/menuboard-player.apk`. 서명 키 `.debug.keystore`가 없으면 디버그 키를 새로 만듭니다(출시용 키는 별도).
-2. **설치**: `menuboard-player.apk`를 `install-board-app.bat`과 같은 폴더에 두고, 보드를 USB(또는 adb 네트워크)로 연결한 PC에서 더블클릭합니다. adb가 없으면 APK를 USB 메모리로 옮겨 보드에서 설치해도 됩니다.
-3. 보드 설정 화면에 서버 주소(예: `192.168.0.10:8090`), 화면 번호, 글자 크기 배율(%)을 넣고 저장합니다. adb로는 `--es server`, `--ei screen`, `--ei zoom` 인텐트 값으로도 넣을 수 있습니다.
+   - 결과: `board-app/build/menuboard-player.apk`와 업데이트 묶음 `board-app/build/updates/`. 버전은 `build.sh` 맨 위 `VERSION_CODE`(새 버전마다 1씩 올림)와 `VERSION_NAME`.
+   - 서명 키 `.debug.keystore`가 없으면 새로 만듭니다. **업데이트는 같은 키로 서명한 APK만 설치되므로 이 파일을 백업하세요.** 잃으면 설치된 보드는 앱을 지우고 다시 깔아야 합니다.
+2. **설치**: `menuboard-player.apk`를 `install-board-app.bat`과 같은 폴더에 두고, 보드를 USB(또는 adb 네트워크)로 연결한 PC에서 더블클릭합니다. bat이 부팅 자동 실행과 업데이트 설치 권한도 허용합니다. adb가 없으면 APK를 USB 메모리로 옮겨 보드에서 설치하고, 설정 화면의 두 권한 버튼으로 허용합니다.
+3. 보드가 같은 망의 서버를 스스로 찾습니다. 못 찾으면 설정 화면이 뜨니 서버 주소(예: `192.168.0.10:8090`), 화면 번호, 글자 크기 배율(%)을 넣고 저장합니다. adb로는 `--es server`, `--ei screen`, `--ei zoom` 인텐트 값으로도 넣을 수 있습니다.
+
+### 보드 앱 업데이트
+
+보드는 인터넷이 아니라 매장 서버(POS기)에서만 새 버전을 받습니다. 그래서 인터넷이 끊긴 매장에서도 보드 쪽은 영향이 없습니다.
+
+1. `build.sh`가 만든 `build/updates/`의 두 파일(`board-app.json`, `menuboard-player-<버전코드>.apk`)을 서버의 `pb_public/updates/`에 넣습니다. `board-app.json` 예: `{"versionCode":2,"versionName":"1.1","apk":"menuboard-player-2.apk","sha256":"…"}`
+2. 보드는 6시간마다 확인만 해 두고(손님 앞에 설치 창이 뜨지 않게), 설정 화면에 ‘새 버전이 있습니다’를 보여 줍니다. ‘업데이트 확인·설치’를 누르면 받아서 sha256을 맞춰 본 뒤 설치 확인 창을 띄우고, 리모컨으로 ‘설치’를 누르면 바뀐 뒤 메뉴판이 다시 뜹니다.
+3. 서명이 다르거나 버전이 낮거나 파일이 깨졌으면 설치하지 않고 지금 버전이 그대로 남습니다.
+
+POS기가 POSWING 업데이트 서버에서 정품 인증 기기별 토큰으로 이 두 파일을 받아 `pb_public/updates/`에 넣는 부분은 서버 쪽 업데이트 작업입니다(아직 없음). 그 전까지는 위 1번을 손으로 합니다.
 
 `board-app/testpage/`는 서버 없이 보드 앱 동작을 보는 시험 페이지입니다.
 

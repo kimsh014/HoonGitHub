@@ -3,10 +3,23 @@
     package="com.menuboard.player">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 네트워크가 다시 잡히면 바로 서버를 확인하기 위해 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 부팅·업데이트 뒤 앱을 다시 띄우기 위해. 안드로이드 10+ 는 '다른 앱 위에 표시' 허용이 있어야 화면을 띄울 수 있다 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- 매장 서버에서 받은 새 버전 APK 설치 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- 안드로이드 TV(리모컨만 있는 기기)와 일반 안드로이드 보드 둘 다에 설치되게 한다 -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <!-- 매장 내부망 서버는 평문 HTTP -->
     <application
         android:label="@string/app_name"
+        android:icon="@drawable/icon"
+        android:banner="@drawable/banner"
         android:allowBackup="false"
         android:usesCleartextTraffic="true">
 
@@ -21,8 +34,10 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- 안드로이드 TV 홈 화면 앱 줄에 보이게 한다 -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-            <!-- 안드로이드 10+ 는 부팅 수신기에서 화면을 띄울 수 없으므로 홈 앱으로 지정해 부팅 때 뜨게 한다 -->
+            <!-- 홈 앱으로 지정할 수 있는 보드(RK3568 등)에서는 홈 앱으로 두면 부팅 때 바로 뜬다 -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
@@ -35,5 +50,20 @@
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@android:style/Theme.DeviceDefault" />
+
+        <!-- 홈 앱을 바꿀 수 없는 안드로이드 TV(구글 TV 등)는 부팅 완료 알림을 받아 앱을 띄운다 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 새 버전 설치 결과(확인 화면 띄우기·실패 기록)를 받는다 -->
+        <receiver
+            android:name=".InstallReceiver"
+            android:exported="false" />
     </application>
 </manifest>
