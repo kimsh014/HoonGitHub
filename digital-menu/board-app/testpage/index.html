@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보드 앱 시험 페이지</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #102030; color: #fff; font-family: sans-serif; }
+  body { display: flex; align-items: center; gap: 4vw; padding: 3vw; box-sizing: border-box; }
+  img { width: 30vw; height: auto; }
+  h1 { font-size: calc(6vw * var(--zoom, 1)); margin: 0 0 2vw; }
+  p { font-size: calc(3vw * var(--zoom, 1)); margin: 1vw 0; }
+  #live { color: #4f4; font-weight: bold; }
+</style>
+</head>
+<body>
+<img src="photo.svg" alt="시험 이미지">
+<div>
+  <h1>메뉴판 시험</h1>
+  <p id="params"></p>
+  <p><span id="live">LIVE</span> <span id="clock"></span></p>
+  <p id="info"></p>
+</div>
+<script>
+  var q = new URLSearchParams(location.search);
+  var zoom = parseInt(q.get('zoom') || '100', 10);
+  document.documentElement.style.setProperty('--zoom', zoom / 100);
+  document.getElementById('params').textContent = 'screen=' + q.get('screen') + '  zoom=' + zoom + '%';
+  document.getElementById('info').textContent =
+    innerWidth + 'x' + innerHeight + ' CSS px, devicePixelRatio=' + devicePixelRatio;
+  function tick() { document.getElementById('clock').textContent = new Date().toLocaleTimeString('ko-KR', { hour12: false }); }
+  tick(); setInterval(tick, 1000);
+  addEventListener('load', function () { if (window.MenuBoardHost) MenuBoardHost.rendered(); });
+</script>
+</body>
+</html>

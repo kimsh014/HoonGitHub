@@ -1,0 +1,19 @@
+# 배포용 묶음(빌드 산출물)
+dist/
+
+# PocketBase 실행 파일과 데이터(계정·메뉴 DB, 업로드 사진)
+server/pocketbase.exe
+server/pb_data/
+server/LICENSE.md
+server/CHANGELOG.md
+
+# 개발용 계정 정보 (절대 커밋하지 않음)
+server/.dev-owner
+server/.dev-superuser
+
+# 보드 앱 빌드 결과, 서명 키, 스크린샷
+board-app/.debug.keystore
+board-app/build/
+board-app/shots/
+*.apk
+*.zip
