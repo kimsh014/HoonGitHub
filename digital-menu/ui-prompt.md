@@ -46,7 +46,8 @@ B. 수정 화면 일곱 개 (매장 POS의 큰 화면과 폰 화면 모두에서
     { "no": 3, "type": "promo", "imageUrl": "https://example.com/promo.jpg", "lines": ["첫 줄", "둘째 줄"], "callBand": false },
     { "no": 4, "type": "calls" }
   ],
-  "calls": [107, 106, 105]
+  "calls": [107, 106, 105],
+  "lastCallAt": 1795651200000
 }
 ```
 - prices는 한 개 또는 두 개. 한 개면 label은 null.
@@ -54,6 +55,7 @@ B. 수정 화면 일곱 개 (매장 POS의 큰 화면과 폰 화면 모두에서
 - posCode는 POS 상품 코드(없으면 null). TV 화면에는 보이지 않고, 수정 화면에서 넣고 고친다.
 - type은 "grid"(사진 격자형), "list"(목록 + 큰 사진형), "promo"(홍보 화면), "calls"(번호 전용 화면).
 - calls는 직원이 부른 번호(1~9999). 가장 최근에 부른 번호가 맨 앞이고, 최대 30개까지 온다.
+- lastCallAt은 calls 맨 앞 번호를 부른 시각(밀리초, 번호가 없으면 null). 직원이 같은 번호를 '다시 부르기'하면 calls는 그대로이고 이 값만 바뀐다. 화면은 맨 앞 번호나 이 값이 바뀌면 새 번호로 보고 강조(깜빡임)한다.
 - callBand가 true인 화면(grid·list·promo)은 아래쪽에 번호 띠를 붙인다. calls 화면에는 callBand가 없다.
 
 # 계약 2: 화면이 부르는 api.js 함수 (모두 Promise를 돌려준다)
@@ -75,7 +77,7 @@ B. 수정 화면 일곱 개 (매장 POS의 큰 화면과 폰 화면 모두에서
   POS 상품 코드는 item.posCode(지우려면 null, 넘기지 않으면 그대로).
 - deleteItem(storeId, itemId) : 메뉴 삭제
 - saveSection(storeId, section) : 구역 추가·수정. 저장한 구역의 id를 돌려준다.
-- deleteSection(storeId, sectionId) : 구역 삭제. 그 구역의 메뉴도 함께 지워지므로 지우기 전에 묻는다.
+- deleteSection(storeId, sectionId) : 구역 삭제. 구역에 메뉴가 있으면 서버가 400("이 구역에 메뉴 N개가 있습니다…")으로 거절하므로, 화면은 지우기 전에 메뉴 수를 보고 먼저 옮기거나 지우라고 안내한다.
 - setSoldOut(storeId, itemId, soldOut) : 품절 켜고 끄기
 - saveScreens(storeId, screens) : TV 화면 구성 전체 저장. 화면 번호(no)로 맞춰 고치고, 빠진 번호는 지운다.
   홍보 이미지는 screen.imageFile에 파일로 담고, 지우려면 screen.imageUrl을 null로 둔다. 문구는 앞 두 줄만 저장된다.
@@ -87,6 +89,8 @@ B. 수정 화면 일곱 개 (매장 POS의 큰 화면과 폰 화면 모두에서
 - callNumber(storeId, number) : 번호(1~9999)를 부른다. 이미 부른 번호면 맨 앞으로 옮긴다.
   가맹점 계정도 부를 수 있다. 매장마다 최근 30개만 남고 나머지는 서버가 지운다.
 - clearCalls(storeId, number) : 부른 번호 하나를 지운다. number를 빼면 그 매장 번호를 모두 지운다.
+- listDevices(storeId) : 이 매장에 붙은 TV 목록 [{ id, name, screen }]. screen은 그 TV가 띄운 화면 번호(모르면 null).
+  로그인한 매장 계정만 읽을 수 있다. 수정 화면이 "이 화면을 띄운 TV"를 알려 주는 데 쓴다(못 읽으면 일반 문구로).
 - listFranchiseStores(), createFranchiseStore(store) : 본사의 가맹점 목록과 등록. 다음 단계라 아직 api.js에 없다.
 - onBoardChange(callback) : 메뉴판 화면의 바로 반영용. board.js가 부르므로 화면에서는 부르지 않는다.
 

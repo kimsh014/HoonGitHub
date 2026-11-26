@@ -220,7 +220,7 @@ var MAX_PHOTOS = 3 // 목록형: 큰 사진 최대 3장
 var MAX_PREV = 8   // 번호 전용 화면: 가장 최근 번호 말고 작게 보이는 앞 번호
 var BAND_COUNT = 6 // 번호 띠: 최대 이만큼, 화면 너비에 들어가는 만큼만
 var MIN_FIT = 0.6  // 넘칠 때 글자를 줄이는 한계
-var lastFirstCall  // 이전에 그린 가장 최근 번호. 다를 때만 깜빡인다
+var lastFirstCall  // 이전에 그린 가장 최근 번호(와 부른 시각). 다를 때만 깜빡인다
 
 function el(tag, text, cls) {
   var node = document.createElement(tag)
@@ -292,7 +292,7 @@ function groups(board, screen, max, filter) {
 
 function drawGrid(main, board, screen) {
   var gs = groups(board, screen, MAX_GRID, function (m) { return !!m.photoUrl })
-  if (!gs.length) return main.appendChild(el('p', '이 화면에 보일 사진 메뉴가 없습니다.', 'notice'))
+  if (!gs.length) return storeOnly(main, board)
   var total = gs.reduce(function (n, g) { return n + g.items.length }, 0)
   var vertical = portrait()
   // 가로: 모든 구역이 같은 줄 수(메뉴 4개 이하면 1줄, 아니면 2줄)를 쓰고, 구역 너비는 칸 수만큼
@@ -323,7 +323,7 @@ function drawGrid(main, board, screen) {
 
 function drawList(main, board, screen) {
   var gs = groups(board, screen, MAX_ROWS)
-  if (!gs.length) return main.appendChild(el('p', '이 화면에 보일 메뉴가 없습니다.', 'notice'))
+  if (!gs.length) return storeOnly(main, board)
   var list = main.appendChild(el('div', '', 'list'))
   var shown = []
   gs.forEach(function (g) {
@@ -359,6 +359,11 @@ function drawPromo(main, board, screen) {
     lines.forEach(function (l) { box.appendChild(el('p', l)) })
   }
   if (!screen.imageUrl && !lines.length) promo.appendChild(el('p', board.store.name, 'notice'))
+}
+
+// 보여 줄 것이 없는 화면: 손님 앞이므로 설정 안내 글 대신 매장 이름만
+function storeOnly(main, board) {
+  main.appendChild(el('p', board.store.name, 'notice'))
 }
 
 function drawCalls(main, board, fresh) {
@@ -444,22 +449,23 @@ function renderBoard(board, screenNo) {
   document.getElementById('store').textContent = board.store.name
   document.title = board.store.name + ' 메뉴판'
 
-  var first = board.calls && board.calls.length ? board.calls[0] : null
+  var first = board.calls && board.calls.length ? board.calls[0] + '@' + (board.lastCallAt || '') : null // 같은 번호를 다시 불러도 깜빡이게
   var fresh = lastFirstCall !== undefined && first !== null && first !== lastFirstCall
   lastFirstCall = first
 
   main.textContent = ''
   band.textContent = ''
   band.hidden = !(screen && screen.type !== 'calls' && screen.callBand)
-  top.hidden = !!screen && (screen.type === 'calls' || screen.type === 'promo') // 번호·홍보 화면은 화면을 다 쓴다
+  top.hidden = !screen || screen.type === 'calls' || screen.type === 'promo' // 번호·홍보 화면은 화면을 다 쓴다. 화면이 없으면 가운데 매장 이름만
 
   if (!band.hidden) drawBand(band, board, fresh)
-  if (!screen) main.appendChild(el('p', screenNo + '번 화면이 설정되지 않았습니다.', 'notice'))
+  // 화면이 없거나(화면 구성에서 지움) 모르는 종류면 손님 앞에 안내 글 대신 매장 이름만 띄운다(점검표 M-6)
+  if (!screen) storeOnly(main, board)
   else if (screen.type === 'grid') drawGrid(main, board, screen)
   else if (screen.type === 'list') drawList(main, board, screen)
   else if (screen.type === 'promo') drawPromo(main, board, screen)
   else if (screen.type === 'calls') drawCalls(main, board, fresh)
-  else main.appendChild(el('p', '알 수 없는 화면 종류입니다: ' + screen.type, 'notice'))
+  else storeOnly(main, board)
   fit(main)
 }
 </script>

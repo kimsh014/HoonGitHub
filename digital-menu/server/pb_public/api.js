@@ -150,6 +150,8 @@
                 : { no: s.no, type: s.type, sectionIds: s.sections, callBand: s.call_band }
             }),
             calls: r[4].map(function (c) { return c.number }), // 최근에 부른 번호부터, 최대 30개
+            // 맨 앞 번호를 부른 시각(ms). 같은 번호를 '다시 부르기'해도 값이 바뀌어 화면이 다시 깜빡인다. 없으면 null.
+            lastCallAt: r[4].length ? Date.parse(String(r[4][0].created).replace(' ', 'T')) || null : null,
           }
         })
       })
@@ -210,7 +212,7 @@
       .then(function (r) { return r.id })
   }
 
-  // 구역을 지우면 그 구역의 메뉴도 같이 지워진다
+  // 구역에 메뉴가 있으면 서버가 400으로 거절한다(메뉴까지 같이 지워지는 사고 막기)
   function deleteSection(storeId, sectionId) { return remove('sections', sectionId) }
 
   function setSoldOut(storeId, itemId, soldOut) {
@@ -273,11 +275,24 @@
     return request('POST', '/api/menuboard/pos/key').then(function (res) { return res.key })
   }
 
+  // ── TV 목록 ──
+  // 이 매장에 붙은 TV [{ id, name, screen }]. screen은 TV가 알려 온 지금 화면 번호,
+  // 아직 알려 오지 않았으면 관리 화면에서 정한 번호, 둘 다 없으면 null. 로그인한 매장 계정만 읽을 수 있다.
+  function listDevices(storeId) {
+    return list('devices', "store='" + storeId + "'", 'name').then(function (rows) {
+      return rows.map(function (d) {
+        var screen = (d.reported && d.reported.screen) || (d.desired && d.desired.screen) || null
+        return { id: d.id, name: d.name || '', screen: screen }
+      })
+    })
+  }
+
   window.api = {
     getBoard: getBoard, onBoardChange: onBoardChange,
     signUp: signUp, login: login, session: session, logout: logout,
     saveItem: saveItem, deleteItem: deleteItem, saveSection: saveSection, deleteSection: deleteSection,
     setSoldOut: setSoldOut, saveScreens: saveScreens, saveStore: saveStore,
     callNumber: callNumber, clearCalls: clearCalls, issuePosKey: issuePosKey,
+    listDevices: listDevices,
   }
 })()
