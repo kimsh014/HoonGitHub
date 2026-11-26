@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>비밀번호 다시 정하기</title>
+<style>
+/* 사장님이 비밀번호를 잊었을 때 POS기에서 여는 화면(점검표 M-10). 매장 서버는 메일을 못 보내므로
+   POS기 자체(127.0.0.1)에서 연 경우에만 서버가 받아 준다. 같은 와이파이의 폰에서는 막힌다. */
+:root{color-scheme:light}
+[hidden]{display:none!important}
+body{margin:0;padding:1rem;font:20px/1.5 "Malgun Gothic",sans-serif;background:#fff;color:#000;max-width:40rem}
+h1{font-size:1.5rem}
+label{display:block;margin:.75rem 0 .25rem}
+input,select,button{font:inherit;min-height:2.8rem;padding:0 .5rem;box-sizing:border-box;width:100%}
+button{margin-top:1rem}
+#msg{background:#ffd;padding:.5rem 1rem;margin:1rem 0;min-height:1.5em}
+.muted{color:#555;font-size:.9em}
+</style>
+
+<h1>비밀번호 다시 정하기</h1>
+<p class="muted">이 화면은 <b>POS기에서</b> 주소창에 <b>http://127.0.0.1:8090/reset.html</b> 을 넣어 열었을 때만 동작합니다.
+  폰이나 다른 컴퓨터에서는 막혀 있습니다. 바꾸면 그 계정으로 로그인해 있던 다른 폰·PC는 모두 로그아웃됩니다.</p>
+<div id="msg"></div>
+
+<form id="form" hidden>
+  <label for="email">계정(이메일)</label>
+  <select id="email"></select>
+  <label for="pw1">새 비밀번호 (8자 이상)</label>
+  <input id="pw1" type="password" autocomplete="new-password">
+  <label for="pw2">새 비밀번호 한 번 더</label>
+  <input id="pw2" type="password" autocomplete="new-password">
+  <button id="save" type="submit">비밀번호 바꾸기</button>
+</form>
+<p><a href="admin.html">메뉴 수정 화면으로</a></p>
+
+<script>
+var $ = function (id) { return document.getElementById(id) }
+function say(t) { $('msg').textContent = t }
+function call(method, body) {
+  return fetch('/api/menuboard/local-reset', {
+    method: method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined,
+  }).then(function (res) {
+    return res.text().then(function (t) {
+      var data = t ? JSON.parse(t) : {}
+      if (res.status === 429) throw new Error('너무 여러 번 시도했습니다. 1분 뒤에 다시 해 주세요.')
+      if (!res.ok) throw new Error(data.message || ('오류 ' + res.status))
+      return data
+    })
+  })
+}
+
+call('GET').then(function (data) {
+  if (!data.accounts.length) return say('아직 계정이 없습니다. 메뉴 수정 화면에서 첫 설치를 해 주세요.')
+  data.accounts.forEach(function (a) {
+    var o = document.createElement('option')
+    o.value = a.email
+    o.textContent = a.email
+    $('email').appendChild(o)
+  })
+  $('form').hidden = false
+  say(data.accounts.length === 1 ? '로그인 이메일은 ' + data.accounts[0].email + ' 입니다.' : '비밀번호를 바꿀 계정을 고르세요.')
+}).catch(function (err) { say(err.message) })
+
+$('form').onsubmit = function (e) {
+  e.preventDefault()
+  if ($('pw1').value.length < 8) return say('새 비밀번호는 8자 이상이어야 합니다.')
+  if ($('pw1').value !== $('pw2').value) return say('두 비밀번호가 다릅니다.')
+  $('save').disabled = true
+  call('POST', { email: $('email').value, password: $('pw1').value }).then(function (data) {
+    $('pw1').value = $('pw2').value = ''
+    say(data.email + ' 의 비밀번호를 바꿨습니다. 메뉴 수정 화면에서 새 비밀번호로 로그인하세요.')
+  }).catch(function (err) { say('실패: ' + err.message) })
+    .then(function () { $('save').disabled = false })
+}
+</script>
+</html>

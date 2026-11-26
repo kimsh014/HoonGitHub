@@ -13,6 +13,9 @@
   var status = null // 메뉴를 한 번도 못 받았을 때만 띄우는 안내 글
   var timer = null // 다음 다시 받기 예약
   var latest = 0 // 가장 최근에 보낸 요청 번호. 늦게 도착한 옛 응답은 버린다
+  var lastBoard = null // 마지막으로 받은 메뉴판 데이터
+  var failingSince = 0 // 서버에 연결이 안 되기 시작한 시각(0 = 잘 붙어 있음)
+  var STALE_CALLS_MS = 60000 // 서버와 이만큼 끊기면 떠 있는 호출 번호를 숨긴다(점검표 B-4: 지난 번호를 보고 손님이 받으러 옴)
 
   // 화면 크기(35~66인치)마다 설치자가 조절하는 글자 배율. index.html이 글자 크기에 var(--zoom, 1)을 곱한다
   if (zoom > 0) document.documentElement.style.setProperty('--zoom', zoom / 100)
@@ -50,6 +53,8 @@
     var mine = ++latest
     api.getBoard(storeId).then(function (board) {
       if (mine !== latest) return
+      failingSince = 0
+      lastBoard = board
       var json = JSON.stringify(board)
       if (json === shown) return // 바뀐 것이 없으면 다시 그리지 않는다 (깜빡임 방지)
       renderBoard(board, screenNo)
@@ -61,9 +66,20 @@
       if (window.console) console.error(err)
       if (!shown) {
         say(err.status === 404 ? (storeId ? '매장 번호가 올바르지 않습니다: ' + storeId : err.message) : '서버에 연결하는 중입니다…')
+        return
+      }
+      if (!failingSince) failingSince = Date.now()
+      // 메뉴는 그대로 두되, 오래 끊기면 호출 번호는 지운다. 다시 붙으면 데이터가 달라 새로 그린다.
+      if (Date.now() - failingSince >= STALE_CALLS_MS && lastBoard && lastBoard.calls && lastBoard.calls.length) {
+        var noCalls = JSON.parse(JSON.stringify(lastBoard))
+        noCalls.calls = []
+        renderBoard(noCalls, screenNo)
+        lastBoard = noCalls
+        shown = JSON.stringify(noCalls)
       }
     }).then(function () {
-      if (!timer) schedule(shown ? refreshMs : RETRY_MS) // 그사이 변경 알림으로 예약된 것이 있으면 그것을 둔다
+      // 그사이 변경 알림으로 예약된 것이 있으면 그것을 둔다. 끊긴 동안에는 자주 다시 시도한다.
+      if (!timer) schedule(shown && !failingSince ? refreshMs : RETRY_MS)
     })
   }
 

@@ -1,7 +1,7 @@
 // pb_public/board.js의 갱신 흐름을 서버·브라우저 없이 검사한다. 사용: node check_board.js
 // 확인하는 것: 매장 번호 없는 주소, zoom 배율, 처음 실패하면 15초 뒤 재시도, 받으면 그리고 MenuBoardHost.rendered(),
 // 화면의 사진이 다 뜬 뒤(최대 10초)에 rendered(), 같은 데이터면 다시 안 그리기, 변경 알림이 몰려와도 0.3초 뒤 한 번만 다시 받기, 받는 중에 온 알림도 놓치지 않기,
-// 끊기면 마지막 화면 유지.
+// 끊기면 마지막 화면 유지, 1분 넘게 끊기면 호출 번호 숨기기.
 const assert = require('assert')
 
 let answer // 다음 getBoard가 돌려줄 것 (Error면 실패, 함수면 그 함수가 끝낼 때까지 대기)
@@ -38,7 +38,8 @@ global.api = {
   },
   onBoardChange(fn) { onChange = fn },
 }
-global.renderBoard = (board, screenNo) => rendered.push([board.v, screenNo])
+let lastCalls // 마지막으로 그린 호출 번호
+global.renderBoard = (board, screenNo) => { lastCalls = board.calls; rendered.push([board.v, screenNo]) }
 global.MenuBoardHost = { rendered: () => hostCalls++ }
 
 const settle = () => new Promise(setImmediate)
@@ -85,8 +86,8 @@ async function main() {
   await fire({ v: 3 })
   assert.deepStrictEqual([rendered.at(-1), hostCalls], [[3, 2], 3])
 
-  await fire(new Error('연결 끊김')) // 마지막 화면 유지, 안내 글도 다시 안 띄움
-  assert.deepStrictEqual([rendered.length, waits(), status.length], [3, [60000], 3])
+  await fire(new Error('연결 끊김')) // 마지막 화면 유지, 안내 글도 다시 안 띄움. 끊긴 동안은 15초마다 다시 시도
+  assert.deepStrictEqual([rendered.length, waits(), status.length], [3, [15000], 3])
 
   await fire({ v: 4 })
   assert.deepStrictEqual(rendered.at(-1), [4, 2])
@@ -112,7 +113,33 @@ async function main() {
   await fire(undefined, 10000)
   slow.emit('load')
   assert.deepStrictEqual([rendered.at(-1), hostCalls], [[6, 2], before + 2])
-  console.log('OK: 매장 번호 없는 주소, zoom, 변경 알림으로 바로 다시 받기, 사진이 뜬 뒤(최대 10초) MenuBoardHost.rendered, 끊겼을 때 마지막 화면 유지가 맞습니다.')
+
+  // 서버와 1분 넘게 끊기면 메뉴는 그대로 두고 호출 번호만 지운다(지난 번호를 보고 손님이 오지 않게). 다시 붙으면 새로 그린다
+  images.splice(0, images.length)
+  onChange()
+  await fire({ v: 7, calls: [12, 11] })
+  assert.deepStrictEqual(lastCalls, [12, 11])
+  const realNow = Date.now
+  let clock = realNow()
+  Date.now = () => clock
+  try {
+    await fire(new Error('끊김'), 60000)
+    assert.deepStrictEqual([rendered.at(-1), lastCalls, waits()], [[7, 2], [12, 11], [15000]])
+    clock += 30000
+    await fire(new Error('끊김'))
+    assert.deepStrictEqual(lastCalls, [12, 11])
+    const drawn = rendered.length
+    clock += 31000
+    await fire(new Error('끊김'))
+    assert.deepStrictEqual([rendered.length, rendered.at(-1), lastCalls], [drawn + 1, [7, 2], []])
+    await fire(new Error('끊김')) // 이미 지웠으면 다시 그리지 않는다
+    assert.strictEqual(rendered.length, drawn + 1)
+    await fire({ v: 7, calls: [12, 11] })
+    assert.deepStrictEqual([lastCalls, waits()], [[12, 11], [60000]])
+  } finally {
+    Date.now = realNow
+  }
+  console.log('OK: 매장 번호 없는 주소, zoom, 변경 알림으로 바로 다시 받기, 사진이 뜬 뒤(최대 10초) MenuBoardHost.rendered, 끊겼을 때 마지막 화면 유지, 1분 넘게 끊기면 호출 번호 숨기기가 맞습니다.')
 }
 
-main().catch((e) => { console.error(e); process.exit(1) })
+main().catch((e) => { process.stderr.write(String(e.stack || e) + '\n'); process.exit(1) })
