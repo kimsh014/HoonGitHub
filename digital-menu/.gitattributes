@@ -1,0 +1,5 @@
+# Windows에서 실행하는 파일은 어디서 받아도 CRLF로 꺼내지게 한다(cmd는 LF만 있는 bat에서 줄을 잘못 읽을 때가 있다).
+# .ps1은 UTF-8 BOM과 함께 저장한다(Windows PowerShell 5.1이 BOM 없는 한글을 깨뜨림).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

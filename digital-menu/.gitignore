@@ -7,6 +7,10 @@ server/pb_data/
 server/LICENSE.md
 server/CHANGELOG.md
 
+# 서버 로그와 설치 때 만든 A/S 관리자 비밀번호 (절대 커밋하지 않음)
+server/logs/
+server/AS-*.txt
+
 # 개발용 계정 정보 (절대 커밋하지 않음)
 server/.dev-owner
 server/.dev-superuser
