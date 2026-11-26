@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>메뉴판 수정 (시안)</title>
+<style>
+/* 시안: UI 담당의 정식 수정 화면이 오기 전까지 쓰는, 기능만 되는 화면. api.js만 부른다.
+   POS 큰 터치 화면에서 누르기 쉽게 글자와 칸을 크게 둔다. */
+:root{color-scheme:light}
+[hidden]{display:none!important} /* label의 inline-flex가 hidden을 덮지 않게 */
+body{margin:0;padding:1rem;font:20px/1.4 "Malgun Gothic",sans-serif;background:#fff;color:#000}
+.draft{background:#c00;color:#fff;padding:.5rem 1rem;font-weight:700;margin:-1rem -1rem 1rem}
+section{border:1px solid #ccc;padding:1rem;margin-bottom:1rem}
+h2{margin:0 0 .5rem;font-size:1.3rem}
+.row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.5rem 0;border-bottom:1px solid #eee}
+input,select,button{font:inherit;min-height:2.6rem;padding:0 .5rem}
+input[type=number]{width:6rem}
+input.short{width:5rem}
+input[type=checkbox]{width:1.6rem;height:1.6rem}
+label{display:inline-flex;align-items:center;gap:.25rem}
+img{height:3rem;vertical-align:middle}
+.sold{opacity:.5}
+#msg{position:sticky;top:0;background:#ffd;padding:.25rem 1rem;min-height:1.4em}
+</style>
+
+<div class="draft">시안 화면입니다 — 정식 수정 화면이 오기 전까지 쓰는 임시 화면</div>
+<div id="msg"></div>
+
+<section id="auth" hidden>
+  <h2>로그인</h2>
+  <div class="row"><input id="email" type="email" placeholder="이메일"><input id="password" type="password" placeholder="비밀번호 (8자 이상)">
+    <button id="login">로그인</button></div>
+  <h2>첫 설치 (계정이 하나도 없을 때만)</h2>
+  <div class="row"><input id="storeName" placeholder="매장 이름"><button id="signUp">위 이메일·비밀번호로 계정 만들기</button></div>
+</section>
+
+<div id="app" hidden>
+  <section><h2>번호 호출</h2><div id="calls"></div></section>
+  <section><h2>가게</h2><div id="store"></div></section>
+  <section><h2>구역</h2><div id="sections"></div></section>
+  <section><h2>메뉴</h2><div id="items"></div></section>
+  <section><h2>화면 구성</h2><div id="screens"></div></section>
+  <button id="logout">로그아웃</button>
+</div>
+
+<script src="api.js"></script>
+<script>
+var me = null // { kind, storeId }
+var board = null
+
+function $(id) { return document.getElementById(id) }
+function say(text) { $('msg').textContent = text }
+
+// 태그 하나 만들기. props는 속성(value, type, checked 등). 사람이 입력한 글은 value/textContent로만 넣는다.
+function el(tag, props, children) {
+  var node = document.createElement(tag)
+  for (var k in props || {}) node[k] = props[k]
+  ;(children || []).forEach(function (c) { if (c) node.append(c) })
+  return node
+}
+function input(value, props) { return el('input', Object.assign({ value: value == null ? '' : value }, props)) }
+function button(text, onclick) { return el('button', { textContent: text, onclick: onclick }) }
+function select(options, value) {
+  var s = el('select', {}, options.map(function (o) { return el('option', { value: o[0], textContent: o[1] }) }))
+  s.value = value == null ? '' : value
+  return s
+}
+function num(inp) { return inp.value === '' ? null : Number(inp.value) }
+
+// 저장 함수 하나를 부르고, 끝나면 메뉴판을 다시 읽어 그린다
+function run(promise, done) {
+  say('저장하는 중…')
+  return promise.then(function () { say(done) ; return load() }).catch(function (err) {
+    say('실패: ' + err.message)
+    if (err.status === 401) logout()
+  })
+}
+
+function load() {
+  return api.getBoard(me.storeId).then(function (b) { board = b; draw() })
+}
+
+function draw() {
+  drawCalls(); drawStore(); drawSections(); drawItems(); drawScreens()
+}
+
+// 번호를 넣고 Enter(또는 호출). 부른 번호를 누르면 그 번호만 지운다.
+function drawCalls() {
+  var no = input('', { id: 'callNo', type: 'number', placeholder: '번호', min: 1, max: 9999 })
+  function call() {
+    var n = num(no)
+    if (!(n >= 1 && n <= 9999 && n % 1 === 0)) return say('번호는 1~9999입니다.')
+    run(api.callNumber(me.storeId, n), n + '번을 불렀습니다.').then(function () { $('callNo').focus() })
+  }
+  no.onkeydown = function (e) { if (e.key === 'Enter') call() }
+  $('calls').replaceChildren(
+    el('div', { className: 'row' }, [no, button('호출', call),
+      board.calls.length && button('전체 지우기', function () {
+        if (confirm('부른 번호를 모두 지울까요?')) run(api.clearCalls(me.storeId), '번호를 모두 지웠습니다.')
+      })]),
+    el('div', { className: 'row' }, board.calls.length ? board.calls.map(function (n) {
+      return button(n + ' ✕', function () { run(api.clearCalls(me.storeId, n), n + '번을 지웠습니다.') })
+    }) : ['부른 번호가 없습니다.']))
+}
+
+function drawStore() {
+  var s = board.store
+  var name = input(s.name), color = input(s.brandColor || '#000000', { type: 'color' })
+  var file = input('', { type: 'file', accept: 'image/*' }), clear = el('input', { type: 'checkbox' })
+  $('store').replaceChildren(el('div', { className: 'row' }, [
+    '이름', name, '브랜드 색', color, '배경', s.backgroundUrl && el('img', { src: s.backgroundUrl }), file,
+    s.backgroundUrl && el('label', {}, [clear, '배경 지우기']),
+    button('저장', function () {
+      run(api.saveStore(me.storeId, {
+        name: name.value, brandColor: color.value,
+        backgroundFile: file.files[0], backgroundUrl: clear.checked ? null : undefined,
+      }), '가게를 저장했습니다.')
+    }),
+  ]))
+}
+
+function drawSections() {
+  function row(s) {
+    var name = input(s.name, { placeholder: '구역 이름' }), order = input(s.order, { type: 'number', placeholder: '순서' })
+    return el('div', { className: 'row' }, [name, '순서', order,
+      button(s.id ? '저장' : '추가', function () {
+        run(api.saveSection(me.storeId, { id: s.id, name: name.value, order: num(order) }), '구역을 저장했습니다.')
+      }),
+      s.id && button('삭제', function () {
+        if (confirm('"' + s.name + '" 구역과 그 안의 메뉴를 모두 지울까요?')) run(api.deleteSection(me.storeId, s.id), '구역을 지웠습니다.')
+      }),
+    ])
+  }
+  $('sections').replaceChildren.apply($('sections'), board.sections.map(row).concat(row({ order: board.sections.length + 1 })))
+}
+
+function drawItems() {
+  var sectionOptions = board.sections.map(function (s) { return [s.id, s.name] })
+  function row(m) {
+    var p = m.prices || []
+    var name = input(m.name, { placeholder: '메뉴 이름' }), section = select(sectionOptions, m.sectionId)
+    var label1 = input(p[0] && p[0].label, { className: 'short', placeholder: '이름표' })
+    var amount1 = input(p[0] && p[0].amount, { type: 'number', placeholder: '가격' })
+    var label2 = input(p[1] && p[1].label, { className: 'short', placeholder: '이름표' })
+    var amount2 = input(p[1] && p[1].amount, { type: 'number', placeholder: '가격2' })
+    var badge = select([['', '딱지 없음'], ['new', '신메뉴'], ['best', '인기']], m.badge)
+    var order = input(m.order, { type: 'number', placeholder: '순서' })
+    var file = input('', { type: 'file', accept: 'image/*' }), clear = el('input', { type: 'checkbox' })
+    var sold = el('input', { type: 'checkbox', checked: !!m.soldOut, onchange: function () {
+      run(api.setSoldOut(me.storeId, m.id, sold.checked), sold.checked ? '품절로 바꿨습니다.' : '품절을 풀었습니다.')
+    } })
+    return el('div', { className: 'row' + (m.soldOut ? ' sold' : '') }, [
+      name, section, label1, amount1, label2, amount2, badge, '순서', order,
+      m.photoUrl && el('img', { src: m.photoUrl }), file, m.photoUrl && el('label', {}, [clear, '사진 지우기']),
+      m.id && el('label', {}, [sold, '품절']),
+      button(m.id ? '저장' : '추가', function () {
+        if (amount1.value === '') return say('가격을 넣어 주세요.')
+        // 가격이 하나면 이름표는 없다(null). 둘이면 둘 다 이름표를 쓴다.
+        var prices = amount2.value === ''
+          ? [{ label: null, amount: num(amount1) }]
+          : [{ label: label1.value || null, amount: num(amount1) }, { label: label2.value || null, amount: num(amount2) }]
+        run(api.saveItem(me.storeId, {
+          id: m.id, sectionId: section.value, name: name.value, prices: prices, order: num(order),
+          badge: badge.value || null, photoFile: file.files[0], photoUrl: clear.checked ? null : undefined,
+        }), '메뉴를 저장했습니다.')
+      }),
+      m.id && button('삭제', function () {
+        if (confirm('"' + m.name + '" 메뉴를 지울까요?')) run(api.deleteItem(me.storeId, m.id), '메뉴를 지웠습니다.')
+      }),
+    ])
+  }
+  var rows = board.items.map(row)
+  if (board.sections.length) rows.push(row({ sectionId: board.sections[0].id, order: board.items.length + 1 }))
+  else rows.push(el('p', { textContent: '구역을 먼저 추가해 주세요.' }))
+  $('items').replaceChildren.apply($('items'), rows)
+}
+
+function drawScreens() {
+  var rows = [] // 각 줄이 지금 입력한 화면 하나를 돌려주는 함수
+  function row(s) {
+    var no = input(s.no, { type: 'number', placeholder: '번호' })
+    var type = select([['grid', '사진 격자'], ['list', '목록 + 큰 사진'], ['promo', '홍보'], ['calls', '번호 전용']], s.type)
+    var band = el('input', { type: 'checkbox', checked: !!s.callBand }), bandPart = el('label', {}, [band, '번호 띠'])
+    var checks = board.sections.map(function (sec) {
+      return el('input', { type: 'checkbox', value: sec.id, checked: (s.sectionIds || []).indexOf(sec.id) >= 0 })
+    })
+    var line1 = input((s.lines || [])[0], { placeholder: '홍보 문구 1' }), line2 = input((s.lines || [])[1], { placeholder: '홍보 문구 2' })
+    var file = input('', { type: 'file', accept: 'image/*' }), clear = el('input', { type: 'checkbox' })
+    var menuPart = el('span', {}, board.sections.map(function (sec, i) { return el('label', {}, [checks[i], sec.name]) }))
+    var promoPart = el('span', {}, [line1, line2, s.imageUrl && el('img', { src: s.imageUrl }), file,
+      s.imageUrl && el('label', {}, [clear, '이미지 지우기'])])
+    function show() {
+      menuPart.hidden = type.value === 'promo' || type.value === 'calls'
+      promoPart.hidden = type.value !== 'promo'
+      bandPart.hidden = type.value === 'calls'
+    }
+    type.onchange = show
+    show()
+    var line = el('div', { className: 'row' }, ['화면', no, type, menuPart, promoPart, bandPart,
+      button('빼기', function () { rows.splice(rows.indexOf(read), 1); line.remove() })])
+    function read() {
+      return {
+        no: num(no), type: type.value, callBand: band.checked,
+        sectionIds: checks.filter(function (c) { return c.checked }).map(function (c) { return c.value }),
+        lines: [line1.value, line2.value].filter(Boolean),
+        imageFile: file.files[0], imageUrl: clear.checked ? null : undefined,
+      }
+    }
+    rows.push(read)
+    return line
+  }
+  var list = el('div', {}, board.screens.map(row))
+  $('screens').replaceChildren(list,
+    button('화면 더하기', function () { list.append(row({ no: rows.length + 1, type: 'grid' })) }),
+    button('화면 구성 저장', function () {
+      var screens = rows.map(function (r) { return r() })
+      if (screens.some(function (s) { return !(s.no >= 1) })) return say('화면 번호는 1 이상이어야 합니다.')
+      run(api.saveScreens(me.storeId, screens), '화면 구성을 저장했습니다.')
+    }))
+}
+
+function start(session) {
+  me = session
+  $('auth').hidden = !!me
+  $('app').hidden = !me
+  if (me) load().catch(function (err) { say('읽기 실패: ' + err.message) })
+}
+
+function logout() { api.logout().then(function () { start(null) }) }
+
+$('login').onclick = function () {
+  api.login($('email').value, $('password').value).then(start).then(function () { say('') })
+    .catch(function (err) { say('로그인 실패: ' + err.message) })
+}
+$('signUp').onclick = function () {
+  api.signUp($('email').value, $('password').value, $('storeName').value).then(start).then(function () { say('설치를 마쳤습니다.') })
+    .catch(function (err) { say('설치 실패: ' + err.message) })
+}
+$('logout').onclick = logout
+api.session().then(start)
+</script>
+</html>

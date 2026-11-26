@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><!-- 보드 앱 WebView가 1080p·4K 어디서나 화면 너비(vw)에 맞게 그리도록 -->
+<title>메뉴판</title>
+<style>
+/* 시안 화면: 글자만 나온다. UI 담당의 화면이 오면 이 파일을 통째로 바꾸되,
+   viewport meta, renderBoard(board, screenNo) 함수와 맨 아래 script 세 줄의 순서는 그대로 둔다. */
+/* 글자 크기는 화면의 긴 변(vmax)에 비례: 가로 1920×1080과 세로 1080×1920에서 같은 크기로 보인다 */
+:root{--scale:1.5vmax;--bg:#111;--fg:#fff;--accent:#ffb300}
+*{box-sizing:border-box;margin:0}
+html{font-size:calc(var(--scale) * var(--zoom, 1))} /* --zoom: 보드 주소의 &zoom=120 → 1.2 (board.js가 넣음) */
+body{height:100vh;overflow:hidden;cursor:none;display:flex;flex-direction:column;
+  background:var(--bg) center/cover no-repeat;color:var(--fg);
+  font-family:"Malgun Gothic","Noto Sans KR","Noto Sans CJK KR",sans-serif;font-weight:700}
+h1{padding:1.2rem 2.5rem .8rem;font-size:2rem;color:var(--accent)}
+main{flex:1;min-height:0;display:flex;padding:1rem 2.5rem 2rem}
+section{flex:1;margin-right:3rem}
+section:last-child{margin-right:0}
+h2{font-size:1.5rem;color:var(--accent);border-bottom:.15rem solid var(--accent);padding-bottom:.4rem;margin-bottom:.8rem}
+ul{list-style:none;padding:0}
+li{display:flex;align-items:baseline;padding:.45rem 0;font-size:1.6rem}
+li i{flex:1;margin:0 .6rem;border-bottom:.1rem dotted rgba(255,255,255,.4)}
+li b{margin-left:.5rem;font-size:.8rem;color:var(--accent)}
+li.sold{opacity:.35}
+.promo{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+.promo img{flex:1;min-height:0;width:100%;object-fit:contain} /* 글 줄을 다 보여주고 남는 높이만큼 사진 */
+.promo p{margin:.5rem;font-size:4rem;color:var(--accent)}
+/* 세로로 건 화면: 구역을 옆이 아니라 아래로 쌓는다 */
+@media (orientation:portrait){main{flex-direction:column}section{flex:none;margin:0 0 2rem}}
+/* 번호 호출: 전용 화면(.calls)과 메뉴 화면 아래 띠(#band). 가장 최근 번호가 첫째이고 강조색 */
+.calls{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.calls h2{border:0;font-size:3rem}
+.calls .now{font-size:14rem;line-height:1.1;color:var(--accent)}
+.calls .rest{display:flex;flex-wrap:wrap;justify-content:center;gap:1rem 3rem;font-size:5rem;margin-top:2rem}
+#band{display:flex;align-items:baseline;gap:2rem;padding:.8rem 2.5rem;font-size:2.4rem;
+  background:rgba(0,0,0,.75);border-top:.2rem solid var(--accent);white-space:nowrap;overflow:hidden}
+#band[hidden]{display:none}
+#band b{font-size:1.4rem;color:var(--accent)}
+#band .now{color:var(--accent);font-size:3rem}
+</style>
+
+<h1 id="store"></h1>
+<main id="main"></main>
+<footer id="band" hidden></footer>
+
+<script>
+function el(tag, text, cls) {
+  var node = document.createElement(tag)
+  if (text) node.textContent = text // 메뉴 이름은 사람이 입력한 글이라 textContent로만 넣는다
+  if (cls) node.className = cls
+  return node
+}
+
+// board: 계약의 데이터 모양, screenNo: 이 TV가 띄울 화면 번호
+function renderBoard(board, screenNo) {
+  var screen = board.screens.filter(function (s) { return s.no === screenNo })[0]
+  var main = document.getElementById('main')
+  document.documentElement.style.setProperty('--accent', board.store.brandColor || '#ffb300')
+  document.body.style.backgroundImage = board.store.backgroundUrl ? 'url("' + board.store.backgroundUrl + '")' : ''
+  document.getElementById('store').textContent = board.store.name
+  main.textContent = ''
+
+  // 번호 띠: 메뉴·홍보 화면에서 callBand가 켜져 있으면 아래에 최근 번호 8개
+  var band = document.getElementById('band')
+  band.hidden = !(screen && screen.callBand)
+  band.textContent = ''
+  if (!band.hidden) {
+    band.appendChild(el('b', '준비된 번호'))
+    board.calls.slice(0, 8).forEach(function (n, i) { band.appendChild(el('span', String(n), i ? '' : 'now')) })
+  }
+
+  if (!screen) return main.appendChild(el('p', screenNo + '번 화면이 설정되지 않았습니다.'))
+
+  if (screen.type === 'calls') {
+    var calls = el('div', '', 'calls')
+    calls.appendChild(el('h2', '준비된 번호'))
+    calls.appendChild(el('div', board.calls.length ? String(board.calls[0]) : '-', 'now'))
+    var rest = calls.appendChild(el('div', '', 'rest'))
+    board.calls.slice(1, 13).forEach(function (n) { rest.appendChild(el('span', String(n))) })
+    return main.appendChild(calls)
+  }
+
+  if (screen.type === 'promo') {
+    var promo = el('div', '', 'promo')
+    if (screen.imageUrl) promo.appendChild(el('img')).src = screen.imageUrl
+    screen.lines.forEach(function (line) { promo.appendChild(el('p', line)) })
+    return main.appendChild(promo)
+  }
+
+  // ponytail: 시안이라 grid(사진 격자)와 list(목록)를 똑같이 글자 목록으로 그린다
+  board.sections.filter(function (s) { return screen.sectionIds.indexOf(s.id) >= 0 }).forEach(function (s) {
+    var box = main.appendChild(el('section'))
+    box.appendChild(el('h2', s.name))
+    var ul = box.appendChild(el('ul'))
+    board.items.filter(function (m) { return m.sectionId === s.id }).forEach(function (m) {
+      var li = ul.appendChild(el('li', '', m.soldOut ? 'sold' : ''))
+      var name = li.appendChild(el('span', m.name))
+      if (m.badge) name.appendChild(el('b', m.badge === 'new' ? 'NEW' : 'BEST'))
+      li.appendChild(el('i'))
+      li.appendChild(el('span', m.soldOut ? '품절' : m.prices.map(function (p) {
+        return (p.label ? p.label + ' ' : '') + p.amount.toLocaleString('ko-KR')
+      }).join(' / ')))
+    })
+  })
+}
+</script>
+<script src="api.js"></script>
+<script src="board.js"></script>
+</html>

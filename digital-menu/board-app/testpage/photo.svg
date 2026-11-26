@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <rect width="400" height="300" rx="20" fill="#f4a020"/>
+  <circle cx="200" cy="150" r="100" fill="#fff"/>
+  <circle cx="200" cy="150" r="70" fill="#c33"/>
+  <text x="200" y="285" font-size="22" text-anchor="middle" fill="#000">PHOTO 400x300</text>
+  <path d="M10 10 L390 10 M10 20 L390 20 M10 30 L390 30" stroke="#000" stroke-width="1"/>
+</svg>

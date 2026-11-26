@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>메뉴판</title>
+<style>
+/* 조절 손잡이: TV 크기·메뉴 개수에 맞춰 --scale 만 바꾸면 전체 글자 크기가 따라옵니다 */
+:root{--scale:1.5vw;--bg:#111;--fg:#fff;--accent:#ffb300}
+*{box-sizing:border-box;margin:0}
+html{font-size:var(--scale)}
+body{height:100vh;overflow:hidden;cursor:none;display:grid;grid-template-rows:auto 1fr;
+  background:var(--bg);color:var(--fg);font-family:"Malgun Gothic",system-ui,sans-serif;font-weight:700}
+h1{padding:1.2rem 2.5rem .8rem;font-size:2rem;color:var(--accent)}
+main{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:3rem;padding:1rem 2.5rem 2rem}
+h2{font-size:1.5rem;color:var(--accent);border-bottom:.15rem solid var(--accent);padding-bottom:.4rem;margin-bottom:.8rem}
+li{display:flex;align-items:baseline;gap:.6rem;padding:.45rem 0;font-size:1.6rem}
+ul{list-style:none;padding:0}
+li i{flex:1;border-bottom:.1rem dotted #fff6}
+small{display:block;font-size:.85rem;font-weight:400;opacity:.7}
+</style>
+
+<h1 id="store"></h1>
+<main id="main"></main>
+
+<script>
+// ── 여기만 고치면 됩니다 (desc 는 생략 가능) ─────────────
+const STORE = '우리식당';
+const MENU = [
+  {cat:'식사', name:'김치찌개', price: 9000},
+  {cat:'식사', name:'된장찌개', price: 8500},
+  {cat:'식사', name:'비빔밥',   price: 9500},
+  {cat:'식사', name:'잔치국수', price: 7000},
+  {cat:'안주', name:'해물파전', price:15000},
+  {cat:'안주', name:'제육볶음', price:14000},
+  {cat:'안주', name:'계란말이', price:10000, desc:'치즈 추가 +2,000'},
+  {cat:'음료', name:'콜라',     price: 2000},
+  {cat:'음료', name:'식혜',     price: 3000},
+  {cat:'음료', name:'생맥주',   price: 5000, desc:'500ml'},
+];
+// ─────────────────────────────────────────────────────
+
+// ponytail: 한 화면 고정, 스크롤·페이지 넘김 없음. 한 열에 약 9개를 넘기면 잘리니 --scale 을 줄이거나 화면을 나눌 것
+document.getElementById('store').textContent = STORE;
+document.getElementById('main').innerHTML = [...new Set(MENU.map(m => m.cat))].map(c =>
+  `<section><h2>${c}</h2><ul>${MENU.filter(m => m.cat === c).map(m =>
+    `<li><span>${m.name}${m.desc ? `<small>${m.desc}</small>` : ''}</span><i></i><span>${m.price.toLocaleString('ko-KR')}</span></li>`
+  ).join('')}</ul></section>`).join('');
+</script>
+</html>
