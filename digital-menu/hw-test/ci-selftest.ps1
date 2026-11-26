@@ -27,15 +27,24 @@ Write-Host '== 2. 임시 서버'
 $data = Join-Path $env:TEMP ('pb-hwtest-' + [guid]::NewGuid().ToString('N'))
 $dirs = @('--migrationsDir', (Join-Path $Srv 'pb_migrations'), '--hooksDir', (Join-Path $Srv 'pb_hooks'), '--publicDir', (Join-Path $Srv 'pb_public'))
 & $Pb superuser upsert 'as@poswing.local' 'ci-password-12345' --dir $data @dirs | Out-Host
-$proc = Start-Process -FilePath $Pb -ArgumentList (@('serve', '--http', "127.0.0.1:$Port", '--dir', $data) + $dirs) -PassThru -WindowStyle Hidden
+$pbLog = Join-Path $env:TEMP 'pb-hwtest.log'
+$proc = Start-Process -FilePath $Pb -ArgumentList (@('serve', '--dev', '--http', "127.0.0.1:$Port", '--dir', $data) + $dirs) -PassThru -WindowStyle Hidden -RedirectStandardOutput $pbLog -RedirectStandardError "$pbLog.err"
+function Show-PbLog { foreach ($f in @($pbLog, "$pbLog.err")) { if (Test-Path $f) { Get-Content $f -Encoding UTF8 | Select-Object -Last 40 | Out-Host } } }
 $base = "http://127.0.0.1:$Port"
 $up = $false
 for ($i = 0; $i -lt 40; $i++) { try { $null = Invoke-WebRequest "$base/api/health" -UseBasicParsing -TimeoutSec 2; $up = $true; break } catch { Start-Sleep -Milliseconds 500 } }
 if (-not $up) { Write-Host '서버가 뜨지 않음' -ForegroundColor Red; exit 1 }
 
 function J($o) { return [Text.Encoding]::UTF8.GetBytes(($o | ConvertTo-Json -Depth 5 -Compress)) }
-$null = Invoke-RestMethod "$base/api/menuboard/setup" -Method Post -ContentType 'application/json' -Body (J @{ storeName = '시험매장'; email = 'owner@ci.test'; password = 'owner-pass-1234' })
-$reg = Invoke-RestMethod "$base/api/menuboard/devices/register" -Method Post -ContentType 'application/json' -Body (J @{ name = 'CI TV'; model = 'ci-rk3568'; version = '1.1' })
+try {
+    $null = Invoke-RestMethod "$base/api/menuboard/setup" -Method Post -ContentType 'application/json; charset=utf-8' -Body (J @{ storeName = '시험매장'; email = 'owner@menu.test'; password = 'password-1234' })
+    $reg = Invoke-RestMethod "$base/api/menuboard/devices/register" -Method Post -ContentType 'application/json; charset=utf-8' -Body (J @{ name = 'CI TV'; model = 'ci-rk3568'; version = '1.1' })
+} catch {
+    Write-Host "준비 요청 실패: $($_.Exception.Message) $($_.ErrorDetails.Message)" -ForegroundColor Red
+    Show-PbLog
+    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    exit 1
+}
 Write-Host "  매장·가짜 TV 만듦 ($($reg.id))"
 
 $tv = Start-Job -ArgumentList $base, $reg.token -ScriptBlock {
@@ -59,12 +68,12 @@ $tv = Start-Job -ArgumentList $base, $reg.token -ScriptBlock {
 }
 
 Write-Host '== 3. hw-test.ps1 -SelfTest'
-$env:HWTEST_EMAIL = 'owner@ci.test'
-$env:HWTEST_PASSWORD = 'owner-pass-1234'
+$env:HWTEST_EMAIL = 'owner@menu.test'
+$env:HWTEST_PASSWORD = 'password-1234'
 $out = Join-Path $env:TEMP ('hwtest-out-' + [guid]::NewGuid().ToString('N'))
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Here 'hw-test.ps1') -SelfTest -Server $base -ServerDir $Srv -OutRoot $out
 $code = $LASTEXITCODE
-if ($code -ne 0) { $fail++ }
+if ($code -ne 0) { $fail++; Show-PbLog }
 
 # 가짜 TV가 있으니 TV 검사는 통과해야 한다(검사 코드가 API와 맞는지).
 $run = Get-ChildItem -LiteralPath $out -Directory | Select-Object -First 1
