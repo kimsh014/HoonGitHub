@@ -114,6 +114,12 @@ if ($v.Out -notmatch [regex]::Escape($PbVersion)) { Warn "pocketbase.exe 버전�
 else { Ok "pocketbase.exe $PbVersion" }
 New-Item -ItemType Directory -Path (Join-Path $Root 'logs') -Force | Out-Null
 
+# 서버는 SYSTEM 계정으로 이 폴더의 run-server.ps1과 pocketbase.exe를 돌린다. 일반 사용자가 이 폴더의 파일을
+# 바꿀 수 있으면 SYSTEM 권한을 얻을 수 있으므로, 관리자·SYSTEM만 쓰고 일반 사용자(Users)는 읽기만 하게 한다.
+$acl = Invoke-Exe "$env:SystemRoot\System32\icacls.exe" @($Root, '/inheritance:r', '/grant:r', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-545:(OI)(CI)RX', '/T', '/C', '/Q')
+if ($acl.Code -ne 0) { Warn "폴더 권한을 바꾸지 못했습니다(일반 사용자가 서버 파일을 고칠 수 있음): $($acl.Out)" }
+else { Ok '폴더 권한: 관리자·SYSTEM만 쓰기, 일반 사용자는 읽기만.' }
+
 Step '2. 돌고 있는 서버 끄기'
 $null = Stop-OurTask
 $n = Stop-OurServer
