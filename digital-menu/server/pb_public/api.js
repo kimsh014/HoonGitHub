@@ -140,6 +140,7 @@
               return {
                 id: m.id, sectionId: m.section, name: m.name, prices: m.prices || [],
                 photoUrl: fileUrl(m, m.photo), order: m.sort_order, soldOut: !!sold[m.id], badge: m.badge || null,
+                posCode: m.pos_code || null,
               }
             }),
             screens: r[2].map(function (s) {
@@ -198,6 +199,7 @@
       section: item.sectionId, name: item.name, prices: item.prices, sort_order: item.order,
       badge: item.badge === undefined ? undefined : item.badge || null,
       photo: fileField(item.photoFile, item.photoUrl),
+      pos_code: item.posCode === undefined ? undefined : item.posCode || '', // POS 상품 코드. 넘기지 않으면 그대로 둔다
     }).then(function (r) { return r.id })
   }
 
@@ -265,11 +267,17 @@
     }).then(function () {})
   }
 
+  // ── POS·키오스크 연동 ──
+  // 이 매장의 연동 키를 새로 만들어 돌려준다(문자열). 예전 키는 바로 못 쓰게 된다. 키는 이때 한 번만 볼 수 있다.
+  function issuePosKey(storeId) {
+    return request('POST', '/api/menuboard/pos/key').then(function (res) { return res.key })
+  }
+
   window.api = {
     getBoard: getBoard, onBoardChange: onBoardChange,
     signUp: signUp, login: login, session: session, logout: logout,
     saveItem: saveItem, deleteItem: deleteItem, saveSection: saveSection, deleteSection: deleteSection,
     setSoldOut: setSoldOut, saveScreens: saveScreens, saveStore: saveStore,
-    callNumber: callNumber, clearCalls: clearCalls,
+    callNumber: callNumber, clearCalls: clearCalls, issuePosKey: issuePosKey,
   }
 })()
