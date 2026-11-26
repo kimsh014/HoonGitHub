@@ -1,0 +1,35 @@
+/* 테마: 디저트 (파스텔) — 연분홍 크림 바탕, 흰 카드에 부드러운 그림자, 가운데 정렬 매장 이름.
+   만든 곳: UI팀 시작 키트(2026-11). 이 파일은 :root의 테마 값만 바꾼다. 바꿀 수 있는 값은 docs/themes/README.md */
+:root{
+  --ink:#4a2a33;
+  --muted:rgba(74,42,51,.66);
+  --base:#fdf1f3;
+  --veil:linear-gradient(rgba(253,241,243,.86),rgba(250,232,236,.93));
+  --glow:radial-gradient(60% 50% at 88% 8%,var(--brand),transparent 70%);
+  --glow-opacity:.18;
+  --panel:rgba(255,255,255,.86);
+  --line:rgba(74,42,51,.14);
+  --radius:1.5em;
+  --card-border:.06em solid rgba(74,42,51,.08);
+  --card-shadow:0 .4em 1.2em rgba(150,80,100,.16);
+  --photo-bg:#f7e3e7;
+  --top-bg:rgba(255,255,255,.8);
+  --top-ink:#4a2a33;
+  --top-line:.2rem solid var(--brand);
+  --top-shadow:0 .2rem .8rem rgba(150,80,100,.12);
+  --top-align:center;
+  --title-bg:var(--brand);
+  --title-ink:var(--on-brand);
+  --title-radius:2em;
+  --title-shadow:none;
+  --badge-new-bg:var(--brand); --badge-new-ink:var(--on-brand);
+  --badge-best-bg:#ffd166; --badge-best-ink:#4a2a33;
+  --hot:#d1495b; --ice:#2f80c2;
+  --sold-bg:#4a2a33; --sold-ink:#fff; --sold-line:#4a2a33;
+  --caption-bg:linear-gradient(transparent,rgba(74,42,51,.78)); --caption-ink:#fff;
+  --promo-shadow:none;
+  --band-bg:rgba(255,255,255,.94);
+  --band-ink:#4a2a33; --band-muted:rgba(74,42,51,.66);
+  --band-line:var(--brand);
+  --call-bg:var(--brand); --call-ink:var(--on-brand);
+}

@@ -23,6 +23,7 @@ POS PC (Windows)                               안드로이드 보드 → 35~66�
   - `pb_public/api.js`: 화면이 서버를 부르는 유일한 곳(로그인, 메뉴·구역·화면 저장, 품절, 번호 호출, `getBoard`, `onBoardChange` 실시간 구독).
   - `pb_public/board.js`: 메뉴판 화면 갱신 흐름. 주소 `/?screen=화면번호` (선택 `&zoom=글자배율%`, `&refresh=초`(기본 300), `&store=매장번호`(서버에 매장이 여럿일 때)). 데이터를 받으면 `index.html`의 `renderBoard(board, screenNo)`를 부릅니다.
   - `pb_public/index.html`: 메뉴판 화면(사진 격자 · 목록 + 큰 사진 · 홍보 · 번호 전용, 번호 띠). 요구사항은 `../ui-prompt.md`, 화면 모습은 `docs/screens/`에 있습니다.
+  - `pb_public/themes/`: 업종별 테마(색·모양만 바꾸는 CSS 파일, `cafe`·`bunsik`·`dessert`)와 목록 `list.json`. 주소에 `&theme=이름`을 붙이면 그 테마로 나옵니다. UI팀이 테마를 더하는 방법은 `docs/themes/README.md`.
   - `pb_public/admin.html`: 동작 확인용 시안입니다. UI 담당이 바꿀 수정 화면입니다.
 - **보드 앱 (`board-app/`)**: 메뉴판 주소를 전체 화면 WebView로 띄우는 안드로이드 앱(`com.menuboard.player`, minSdk 30). 안드로이드 TV와 일반 안드로이드 보드 둘 다 지원합니다.
   - 켜기: 홈 앱으로 지정할 수 있는 보드는 홈 앱으로, 구글 TV처럼 홈 앱을 못 바꾸는 TV는 부팅 완료 알림으로 스스로 뜹니다(‘다른 앱 위에 표시’ 허용 필요, 설치 bat이 허용). 화면 꺼짐·화면 보호기는 막습니다.
@@ -74,7 +75,8 @@ dist/
 - `python seed_and_check.py`: 샘플 매장 '우리카페'와 메뉴를 넣고 접근 규칙을 검사합니다. 개발용 계정을 `server/.dev-owner`에 만들어 쓰고, `server/.dev-superuser`(PocketBase 관리자 이메일과 비밀번호, 한 줄씩)가 필요합니다. 두 파일은 커밋하지 않습니다.
 - `node check_api.js`: `api.js`의 계약 함수 전부를 실제 서버에 대고 검사합니다 (`seed_and_check.py`를 먼저 실행).
 - `node check_board.js`: `board.js` 갱신 흐름을 서버 없이 검사합니다.
-- `node check_screens.js [shots]`: 메뉴판 화면을 서버 없이 가짜 데이터로 띄워 1920×1080, 3840×2160, 세로 1080×1920과 글자 배율 100·150%에서 잘리는 글이 없는지 검사합니다. `shots`를 붙이면 `server/shots/`에 스크린샷을 남깁니다(Playwright와 Chromium 필요, 서버는 필요 없음).
+- `node check_screens.js [shots]`: 메뉴판 화면을 서버 없이 가짜 데이터로 띄워 1920×1080, 3840×2160, 세로 1080×1920과 글자 배율 100·150%에서 잘리는 글이 없는지 기본 모습과 테마마다 검사합니다. `shots`를 붙이면 `server/shots/<테마>/`에 스크린샷을 남기고, 뒤에 테마 이름(`default`, `cafe` …)을 붙이면 그 테마만 봅니다(Playwright와 Chromium 필요, 서버는 필요 없음).
+- `node check_themes.js`: 테마 파일 규칙(`:root`의 테마 값만, 바깥 주소 금지)과 글자·바탕 대비를 몇 초 만에 검사합니다.
 - `node check_devices.js`: TV 원격 관리(등록·보고, 설정 바꾸기, 재시작·캡처·A/S 연결 요청, 캡처 사진, 매장 구분)를 임시 서버(127.0.0.1:8093)로 검사합니다.
 - `node check_pos.js`: POS·키오스크 연동을 검사합니다. 켜 둔 서버와 상관없이 임시 서버(127.0.0.1:8092)를 잠깐 띄워 쓰고, `pocketbase.exe`만 있으면 됩니다(다른 위치면 `POCKETBASE` 환경 변수). 보드 화면(`board.js`)이 POS 변경을 새로고침 없이 다시 그리는 데 걸린 시간도 찍습니다.
 - `node check_calls.js`: 키패드 앱이 쓰는 번호 호출 경로(`/api/menuboard/pos/calls`)를 임시 서버(127.0.0.1:8096)로 검사합니다. 부르기·다시 부르기·빼기, 3초 안 같은 번호, 틀린 번호, 가맹점 구분, TV 화면 반영 시간을 봅니다.

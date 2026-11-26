@@ -1,0 +1,35 @@
+/* 테마: 분식 (활기찬 노랑) — 밝은 노란 바탕에 검은 굵은 테두리, 스티커처럼 딱 떨어지는 그림자.
+   멀리서도 번호가 잘 보이게 번호 띠는 검정 바탕에 노란 번호.
+   만든 곳: UI팀 시작 키트(2026-11). 이 파일은 :root의 테마 값만 바꾼다. 바꿀 수 있는 값은 docs/themes/README.md */
+:root{
+  --ink:#1d1d1d;
+  --muted:rgba(29,29,29,.68);
+  --base:#ffe066;
+  --veil:linear-gradient(rgba(255,224,102,.9),rgba(255,214,64,.95));
+  --glow:radial-gradient(rgba(29,29,29,.09) 14%,transparent 15%) 0 0/2.4rem 2.4rem;
+  --glow-opacity:1;
+  --panel:#fffdf4;
+  --line:rgba(29,29,29,.28);
+  --radius:.7em;
+  --card-border:.14em solid #1d1d1d;
+  --card-shadow:.28em .28em 0 #1d1d1d;
+  --photo-bg:#fff3c4;
+  --top-bg:#1d1d1d;
+  --top-ink:#ffe066;
+  --top-line:none;
+  --top-shadow:0 .25rem 0 var(--brand);
+  --title-bg:var(--brand);
+  --title-ink:var(--on-brand);
+  --title-radius:.35em;
+  --title-shadow:.2em .2em 0 #1d1d1d;
+  --badge-new-bg:var(--brand); --badge-new-ink:var(--on-brand);
+  --badge-best-bg:#1d1d1d; --badge-best-ink:#ffe066;
+  --hot:#d84315; --ice:#0b6fb8;
+  --sold-bg:#1d1d1d; --sold-ink:#fff; --sold-line:#1d1d1d;
+  --caption-bg:linear-gradient(transparent,rgba(0,0,0,.82)); --caption-ink:#fff;
+  --promo-shadow:none;
+  --band-bg:#1d1d1d;
+  --band-ink:#fff; --band-muted:rgba(255,255,255,.75);
+  --band-line:var(--brand);
+  --call-bg:#ffe066; --call-ink:#1d1d1d;
+}

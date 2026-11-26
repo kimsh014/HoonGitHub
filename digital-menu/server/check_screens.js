@@ -1,6 +1,7 @@
 // pb_public/index.html(메뉴판 화면)을 서버 없이 가짜 데이터로 띄워, 화면 크기·방향·글자 배율마다 잘리는 글이 없는지 검사한다.
-// 사용: node check_screens.js            검사만
-//       node check_screens.js shots      검사하고 shots/ 폴더에 스크린샷도 저장 (shots/는 커밋하지 않는다)
+// 사용: node check_screens.js                 검사만 (기본 모습 + themes/list.json의 테마 전부)
+//       node check_screens.js shots           검사하고 shots/ 폴더에 스크린샷도 저장 (shots/는 커밋하지 않는다)
+//       node check_screens.js shots cafe      테마 하나만 (기본 모습만은 default)
 // 필요: Playwright와 Chromium (npm i -g playwright 후 npx playwright install chromium)
 // api.js만 같은 함수 이름의 가짜로 바꿔 끼우고, index.html과 board.js는 실제 파일을 그대로 쓴다.
 const fs = require('fs')
@@ -9,7 +10,12 @@ const { chromium } = require('playwright')
 
 const PUBLIC = path.join(__dirname, 'pb_public')
 const OUT = path.join(__dirname, 'shots')
-const SAVE = process.argv[2] === 'shots'
+const SAVE = process.argv.includes('shots')
+// 테마: '' = 테마 없음(기본 모습). 테마마다 견본 매장 이름·브랜드 색을 list.json에서 가져와 그 테마답게 찍는다.
+const THEME_LIST = JSON.parse(fs.readFileSync(path.join(PUBLIC, 'themes', 'list.json'), 'utf8'))
+const ONLY = process.argv.slice(2).filter((a) => a !== 'shots')[0]
+const THEMES = [{ id: '' }].concat(THEME_LIST).filter((t) => !ONLY || (t.id || 'default') === ONLY)
+if (!THEMES.length) { console.log('그런 테마가 없습니다: ' + ONLY); process.exit(1) }
 
 const SIZES = [
   { name: 'fhd-landscape', width: 1920, height: 1080 },
@@ -69,7 +75,12 @@ function fakeApi(board) {
   return `window.api = { getBoard: function () { return Promise.resolve(${JSON.stringify(board)}) }, onBoardChange: function () {} }`
 }
 
-async function open(page, board, screen, zoom) {
+function themed(board, theme) {
+  if (!theme.id) return board
+  return { ...board, store: { ...board.store, name: theme.sampleStore || board.store.name, brandColor: theme.sampleBrand || board.store.brandColor } }
+}
+
+async function open(page, board, screen, zoom, theme = '') {
   await page.route('**/*', (route) => {
     const url = new URL(route.request().url())
     const p = url.pathname
@@ -82,8 +93,9 @@ async function open(page, board, screen, zoom) {
     if (file.startsWith(PUBLIC) && fs.existsSync(file)) return route.fulfill({ path: file })
     return route.fulfill({ status: 404, body: '' })
   })
-  await page.goto(`http://board.test/?screen=${screen}&zoom=${zoom}`)
+  await page.goto(`http://board.test/?screen=${screen}&zoom=${zoom}${theme ? '&theme=' + theme : ''}`)
   await page.waitForFunction(() => document.getElementById('main').childElementCount > 0)
+  if (theme) await page.waitForFunction((t) => document.documentElement.getAttribute('data-theme') === t, theme, { timeout: 5000 })
   await page.evaluate(() => Promise.all([].map.call(document.images, (i) => i.complete || new Promise((r) => { i.onload = i.onerror = r }))))
   await page.unroute('**/*')
 }
@@ -113,19 +125,23 @@ function clipped() {
   if (SAVE) fs.mkdirSync(OUT, { recursive: true })
   const browser = await chromium.launch()
   let fails = 0
+  for (const theme of THEMES) {
+  const dir = path.join(OUT, theme.id || 'default')
+  if (SAVE) fs.mkdirSync(dir, { recursive: true })
   for (const size of SIZES) {
     for (const zoom of ZOOMS) {
       const page = await browser.newPage({ viewport: { width: size.width, height: size.height }, deviceScaleFactor: 1 })
       const cases = [[BOARD, 1], [BOARD, 2], [BOARD, 3], [BOARD, 4], [BOARD, 5], [EMPTY_CALLS, 4]]
       for (const [board, screen] of cases) {
-        await open(page, board, screen, zoom)
+        await open(page, themed(board, theme), screen, zoom, theme.id)
         const name = `${size.name}-z${zoom}-screen${screen}${board === EMPTY_CALLS ? '-empty' : ''}`
         const bad = await page.evaluate(clipped)
-        if (bad.length) { fails++; console.log('잘림', name, bad.slice(0, 5)) } else console.log('통과', name)
-        if (SAVE) await page.screenshot({ path: path.join(OUT, name + '.png') })
+        if (bad.length) { fails++; console.log('잘림', theme.id || 'default', name, bad.slice(0, 5)) } else console.log('통과', theme.id || 'default', name)
+        if (SAVE) await page.screenshot({ path: path.join(dir, name + '.png') })
       }
       await page.close()
     }
+  }
   }
   // 새 번호가 불리면 첫 번호만 깜빡이고, 같은 번호로 다시 그리면 깜빡이지 않는다
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } })
