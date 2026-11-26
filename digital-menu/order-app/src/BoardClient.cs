@@ -41,10 +41,12 @@ namespace MenuBoardKeypad
             return Parse(Request("GET", "/api/menuboard/pos/calls", null));
         }
 
-        public CallsResult Send(CallAction action, int number)
+        // retry: 못 보낸 번호를 다시 보낼 때. 응답만 늦었던 경우 TV에서 두 번 깜빡이지 않게 서버가 이미 있으면 넘긴다.
+        public CallsResult Send(CallAction action, int number, bool retry)
         {
             string a = action == CallAction.Recall ? "recall" : action == CallAction.Cancel ? "cancel" : "call";
-            return Parse(Request("POST", "/api/menuboard/pos/calls", "{\"number\":" + number + ",\"action\":\"" + a + "\"}"));
+            return Parse(Request("POST", "/api/menuboard/pos/calls",
+                "{\"number\":" + number + ",\"action\":\"" + a + "\"" + (retry ? ",\"retry\":true" : "") + "}"));
         }
 
         static CallsResult Parse(Dictionary<string, object> data)

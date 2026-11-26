@@ -158,7 +158,7 @@ USB 숫자 키패드 ─▶ MenuBoardKeypad.exe (POS기, 항상 위 좁은 창)
 | `GET /api/menuboard/pos/calls` | | `{ "store": { "id", "name" }, "calls": [ { "number": 12, "at": 1795651200000 } ] }` (최근 것부터, 최대 30개) |
 | `POST /api/menuboard/pos/calls` | `{ "number": 12, "action": "call" }` | `{ "number", "action", "result", "calls" }` |
 
-`action`: `call`(기본, 3초 안에 같은 번호면 `result: "ignored"`) · `recall`(이미 있어도 맨 앞으로, TV가 다시 깜빡임) · `cancel`(TV에서 빼기, 없으면 `result: "absent"`). `result`는 `called`·`ignored`·`removed`·`absent`. 번호는 1~9999 정수(숫자 글자도 받음), 틀리면 400. 가맹점 키는 자기 매장 번호만 다룹니다. 로그인이 필요 없어서 매장 계정 로그인이 만료돼도(B-12) 번호를 부를 수 있습니다.
+`action`: `call`(기본, 3초 안에 같은 번호면 `result: "ignored"`. `"retry": true`를 붙이면 못 보낸 번호를 다시 보내는 것으로 보고 이미 TV에 있으면 `ignored`) · `recall`(이미 있어도 맨 앞으로, TV가 다시 깜빡임) · `cancel`(TV에서 빼기, 없으면 `result: "absent"`). `result`는 `called`·`ignored`·`removed`·`absent`. 번호는 1~9999 정수(숫자 글자도 받음), 틀리면 400. 가맹점 키는 자기 매장 번호만 다룹니다. 로그인이 필요 없어서 매장 계정 로그인이 만료돼도(B-12) 번호를 부를 수 있습니다.
 
 ## 보드 앱 빌드와 설치
 

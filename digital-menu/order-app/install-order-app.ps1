@@ -58,6 +58,7 @@ if ((Test-Path -LiteralPath $Exe) -and (Get-Item -LiteralPath $Exe).LastWriteTim
 
 Step '폴더 잠그기'
 $ErrorActionPreference = 'Continue'  # Windows PowerShell 5.1은 프로그램의 오류 출력을 예외로 바꾼다
+& "$env:SystemRoot\System32\icacls.exe" $Root /setowner '*S-1-5-32-544' /T /C /Q 2>&1 | Out-Null  # 주인을 Administrators로(복사한 계정이 주인이면 잠금을 풀 수 있으므로)
 $acl = (& "$env:SystemRoot\System32\icacls.exe" $Root /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-545:(OI)(CI)RX' /T /C /Q 2>&1 | ForEach-Object { [string]$_ }) -join ' '
 $ErrorActionPreference = 'Stop'
 if ($LASTEXITCODE -ne 0) { Warn "폴더 권한을 바꾸지 못했습니다(다른 계정이 앱을 바꿀 수 있음): $acl" }

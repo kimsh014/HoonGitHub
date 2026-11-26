@@ -172,6 +172,7 @@ function checkNumber(n) {
 }
 
 // action: "call"(기본) 번호 부르기 · "recall" 다시 부르기(이미 있어도 맨 앞으로, TV가 다시 깜빡임) · "cancel" 화면에서 빼기
+// retry: true면 못 보낸 번호를 다시 보내는 것. 응답만 늦었고 서버는 이미 받았을 수 있으니, 그 번호가 TV에 있으면 다시 띄우지 않는다.
 // 돌려주는 것: { number, action, result: "called" | "ignored" | "removed" | "absent", calls: [...] }
 function applyCall(app, store, body) {
   body = body || {}
@@ -186,7 +187,7 @@ function applyCall(app, store, body) {
       result = rows.length ? "removed" : "absent"
       return
     }
-    if (action === "call" && rows.length && Date.now() - callAt(rows[0]) < SAME_CALL_SECONDS * 1000) {
+    if (action !== "cancel" && rows.length && (body.retry === true || (action === "call" && Date.now() - callAt(rows[0]) < SAME_CALL_SECONDS * 1000))) {
       result = "ignored"
       return
     }

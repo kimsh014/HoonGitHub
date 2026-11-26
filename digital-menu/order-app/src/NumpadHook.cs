@@ -50,7 +50,7 @@ namespace MenuBoardKeypad
 
         public bool Installed { get { return hook != IntPtr.Zero; } }
 
-        // 설치(이미 있으면 새로 건다). Windows는 응답이 늦은 훅을 말없이 떼어 버리기도 해서 1분마다 다시 건다.
+        // 설치(이미 있으면 새로 건다). Windows는 응답이 늦은 훅을 말없이 떼어 버리기도 해서 15초마다 다시 건다.
         // 새 훅을 먼저 걸고 옛 훅을 떼므로 그 사이에 키가 판매 프로그램으로 새지 않는다.
         public void Install()
         {

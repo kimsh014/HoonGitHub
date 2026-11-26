@@ -124,6 +124,13 @@ async function main() {
   assert.strictEqual(r.result, 'called')
   assert.deepStrictEqual(r.calls.map((c) => c.number), [13, 12])
 
+  // 못 보낸 번호 다시 보내기(retry): 이미 TV에 있으면 다시 띄우지 않음, 없으면 부름
+  r = await ok('retry 13', 'POST', '/api/menuboard/pos/calls', { number: 13, retry: true }, k)
+  assert.strictEqual(r.result, 'ignored')
+  r = await ok('retry 14', 'POST', '/api/menuboard/pos/calls', { number: 14, retry: true }, k)
+  assert.strictEqual(r.result, 'called')
+  r = await send(14, 'cancel')
+
   // ── 취소 ──
   await boardShows('13번 취소', async () => {
     r = await send(13, 'cancel')

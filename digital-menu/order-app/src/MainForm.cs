@@ -18,16 +18,18 @@ namespace MenuBoardKeypad
     public sealed class MainForm : Form
     {
         const int PollMs = 10000, FastPollMs = 3000;
-        static readonly TimeSpan RehookEvery = TimeSpan.FromMinutes(1);
+        static readonly TimeSpan RehookEvery = TimeSpan.FromSeconds(15);
         static readonly TimeSpan RetryFor = TimeSpan.FromMinutes(2);
 
         sealed class Pending { public Outcome Job; public DateTime At; public bool Queued; }
         readonly List<Pending> pending = new List<Pending>(); // 화면 스레드에서만 만진다
+        readonly HashSet<Outcome> retrying = new HashSet<Outcome>(); // 다시 보내는 중인 것(작업 스레드도 읽음, lock)
         volatile bool fastPoll;
 
         public int ExitCode = 1; // 0이면 지킴이도 멈춘다
         bool exitRequested;
         bool settingsOpen;
+        bool hookError;
 
         Settings settings;
         volatile BoardClient client;
@@ -218,15 +220,19 @@ namespace MenuBoardKeypad
 
         void ApplyCapture()
         {
+            lastHookAt = DateTime.Now; // 실패해도 다음 시도는 15초 뒤(매초 오류음이 나지 않게)
             try
             {
-                if (settings.CaptureNumpad) { hook.Install(); lastHookAt = DateTime.Now; }
+                if (settings.CaptureNumpad) hook.Install();
                 else hook.Uninstall();
+                hookError = false;
             }
             catch (Exception ex)
             {
-                Log.Write("숫자패드 훅을 걸지 못함: " + ex.Message);
-                Notify(Tone.Error, "숫자패드를 받을 수 없습니다. 화면 단추로 부르세요. (" + ex.Message + ")");
+                if (!hookError) Log.Write("숫자패드 훅을 걸지 못함: " + ex.Message);
+                if (!hookError) Notify(Tone.Error, "숫자패드를 받을 수 없습니다. 화면 단추로 부르세요. (" + ex.Message + ")");
+                hookError = true;
+                hook.Uninstall();
             }
         }
 
@@ -337,7 +343,7 @@ namespace MenuBoardKeypad
             {
                 SetWindowPos(Handle, (IntPtr)(-1) /* HWND_TOPMOST */, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 /* NOSIZE|NOMOVE|NOACTIVATE */);
             }
-            // Windows가 응답이 늦은 훅을 말없이 뗄 수 있어 1분마다 다시 건다(새 훅을 먼저 걸어 빈틈 없음).
+            // Windows가 응답이 늦은 훅을 말없이 뗄 수 있어 15초마다 다시 건다(새 훅을 먼저 걸어 빈틈 없음).
             if (settings.CaptureNumpad && !settingsOpen && now - lastHookAt > RehookEvery) ApplyCapture();
             DropOldPending(now);
             Refresh2();
@@ -357,7 +363,9 @@ namespace MenuBoardKeypad
                 {
                     try
                     {
-                        CallsResult r = c.Send(job.Action, job.Number);
+                        bool retry;
+                        lock (retrying) retry = retrying.Contains(job);
+                        CallsResult r = c.Send(job.Action, job.Number, retry);
                         Ui(delegate { OnSent(job, r); });
                     }
                     catch (Exception ex)
@@ -388,6 +396,7 @@ namespace MenuBoardKeypad
         {
             DateTime now = DateTime.Now;
             pending.RemoveAll(delegate (Pending p) { return p.Job == job; });
+            lock (retrying) retrying.Remove(job);
             logic.SendDone(job.Action, job.Number, r.Result, now);
             Log.Write(job.Action + " " + job.Number + " → " + r.Result);
             Notify(r.Result == "called" || r.Result == "removed" ? Tone.Ok : Tone.Info, KeypadLogic.ResultMessage(job.Action, job.Number, r.Result));
@@ -402,6 +411,7 @@ namespace MenuBoardKeypad
             if (se != null && se.Status >= 400 && se.Status < 500 && se.Status != 401 && se.Status != 429)
             {
                 if (mine != null) pending.Remove(mine);
+                lock (retrying) retrying.Remove(job);
                 Notify(Tone.Error, job.Number + "번: " + ex.Message); // 요청 자체가 틀림. 다시 보내도 같다.
             }
             else
@@ -430,6 +440,7 @@ namespace MenuBoardKeypad
             {
                 if (p.Queued) continue;
                 p.Queued = true;
+                lock (retrying) retrying.Add(p.Job);
                 jobs.Add(p.Job);
             }
         }
