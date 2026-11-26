@@ -111,6 +111,28 @@ final class Remote {
     // 평소에는 ADB를 꺼 두고(잠금), 관리 화면이나 USB 설정 파일로 연 시간 동안만 켠다.
     // 네트워크로 붙는 포트(보통 5555)는 보드 펌웨어 설정(persist.adb.tcp.port)을 따른다.
 
+    /**
+     * A/S 연결을 지금부터 seconds 초 동안 연다(0 = 바로 잠금).
+     * 마감은 벽시계가 아니라 부팅 후 경과 시간과 부팅 횟수로 적는다. RTC 배터리가 없는 보드는 정전 뒤 시계가
+     * 옛 날짜로 돌아가 지난 마감이 다시 '미래'가 될 수 있기 때문. 재부팅하면 연결은 잠긴다.
+     */
+    static void setAdbWindow(Context c, long seconds) {
+        c.getSharedPreferences("board", Context.MODE_PRIVATE).edit()
+                .putLong("adbUntilElapsed", android.os.SystemClock.elapsedRealtime() + seconds * 1000)
+                .putInt("adbBoot", bootCount(c)).apply();
+    }
+
+    /** 남은 A/S 연결 시간(밀리초). 잠겨 있으면 0. */
+    static long adbLeftMs(Context c) {
+        SharedPreferences p = c.getSharedPreferences("board", Context.MODE_PRIVATE);
+        if (p.getInt("adbBoot", -2) != bootCount(c)) return 0; // 다른 부팅에서 연 것
+        return Math.max(0, p.getLong("adbUntilElapsed", 0) - android.os.SystemClock.elapsedRealtime());
+    }
+
+    private static int bootCount(Context c) {
+        return Settings.Global.getInt(c.getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+    }
+
     static boolean canAdb(Context c) {
         return c.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED;
     }
