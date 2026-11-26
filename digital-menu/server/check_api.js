@@ -137,16 +137,23 @@ async function main() {
     assert.deepStrictEqual(board.sections.find((s) => s.id === sectionId), { id: sectionId, name: '검사구역2', order: 8 })
     let item = board.items.find((m) => m.id === itemId)
     assert.deepStrictEqual({ ...item, photoUrl: !!item.photoUrl },
-      { id: itemId, sectionId, name: '검사메뉴', prices: [{ label: null, amount: 1000 }], photoUrl: true, order: 99, soldOut: false, badge: null })
+      { id: itemId, sectionId, name: '검사메뉴', prices: [{ label: null, amount: 1000 }], photoUrl: true, order: 99, soldOut: false, badge: null, posCode: null })
     // 응답 본문은 끝까지 읽는다. 윈도우에서는 읽다 만 파일이 열린 채로 남아 다음 저장의 파일 지우기가 실패한다
     const photo = await fetch(item.photoUrl)
     assert.deepStrictEqual([photo.headers.get('content-type'), (await photo.arrayBuffer()).byteLength], ['image/png', pngBytes.length])
 
     // 수정: getBoard 모양 그대로 받아 고친다. photoUrl: null 이면 사진을 지운다
-    await changed('saveItem 수정', () => api.saveItem(sid, { ...item, name: '검사메뉴2', badge: 'new', photoUrl: null,
+    await changed('saveItem 수정', () => api.saveItem(sid, { ...item, name: '검사메뉴2', badge: 'new', photoUrl: null, posCode: 'T99',
       prices: [{ label: 'HOT', amount: 1500 }, { label: 'ICE', amount: 2000 }] }))
     item = (await api.getBoard()).items.find((m) => m.id === itemId)
-    assert.deepStrictEqual([item.name, item.badge, item.photoUrl, item.prices], ['검사메뉴2', 'new', null, [{ label: 'HOT', amount: 1500 }, { label: 'ICE', amount: 2000 }]])
+    assert.deepStrictEqual([item.name, item.badge, item.photoUrl, item.prices, item.posCode], ['검사메뉴2', 'new', null, [{ label: 'HOT', amount: 1500 }, { label: 'ICE', amount: 2000 }], 'T99'])
+    await api.saveItem(sid, { id: itemId, posCode: null }) // POS 코드 지우기
+    assert.strictEqual((await api.getBoard()).items.find((m) => m.id === itemId).posCode, null)
+
+    // POS 연동 키 (자세한 검사는 check_pos.js)
+    const posKey = await api.issuePosKey(sid)
+    assert.match(posKey, /^mbpos_\w{40}$/)
+    assert.strictEqual((await fetch(`${BASE}/api/menuboard/pos/items`, { headers: { 'X-POS-Key': posKey } })).status, 200)
 
     await changed('setSoldOut 켜기', () => api.setSoldOut(sid, itemId, true))
     await api.setSoldOut(sid, itemId, true) // 두 번 켜도 오류 없이
