@@ -11,9 +11,10 @@ server/CHANGELOG.md
 server/.dev-owner
 server/.dev-superuser
 
-# 보드 앱 빌드 결과, 서명 키, 스크린샷
+# 보드 앱 빌드 결과, 서명 키, 스크린샷 (server/shots는 check_screens.js 결과)
 board-app/.debug.keystore
 board-app/build/
 board-app/shots/
 *.apk
 *.zip
+server/shots/
