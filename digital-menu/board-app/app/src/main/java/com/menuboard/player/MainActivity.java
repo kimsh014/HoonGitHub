@@ -218,9 +218,14 @@ public class MainActivity extends Activity {
         startActivity(new Intent(this, SettingsActivity.class));
     }
 
-    /** adb 등에서 --es server / --ei screen / --ei zoom 으로 넘긴 설정을 저장한다. */
+    /** adb 등에서 --es server / --ei screen / --ei zoom 으로 넘긴 설정을 저장한다.
+     *  이 화면은 홈 앱이라 다른 앱도 부를 수 있으므로, ADB가 켜져 있을 때(설치·A/S 중)만 받는다(점검표 R-7). */
     private boolean applyIntent(Intent i) {
         if (i == null || !i.hasExtra("server")) return false;
+        if (android.provider.Settings.Global.getInt(getContentResolver(), android.provider.Settings.Global.ADB_ENABLED, 0) != 1) {
+            Log.w(TAG, "ADB가 꺼져 있어 인텐트 설정 무시");
+            return false;
+        }
         String err = save(prefs, i.getStringExtra("server"),
                 String.valueOf(i.getIntExtra("screen", 1)), String.valueOf(i.getIntExtra("zoom", 100)));
         if (err != null) Log.w(TAG, "인텐트 설정 무시: " + err);
@@ -656,12 +661,12 @@ public class MainActivity extends Activity {
         if (m.containsKey("as")) {
             try {
                 int min = Integer.parseInt(m.get("as"));
-                if (min < 0 || min > 240) throw new NumberFormatException();
+                if (min < 0 || min > Remote.MAX_ADB_MINUTES) throw new NumberFormatException();
                 Remote.setAdbWindow(this, min * 60L);
                 done.add(min == 0 ? "A/S 연결 잠금" : "A/S 연결 " + min + "분");
                 if (!Remote.canAdb(this)) errors.add("A/S 연결 권한 없음(install-board-app.bat 필요)");
             } catch (NumberFormatException e) {
-                errors.add("as 는 0~240(분)입니다");
+                errors.add("as 는 0~" + Remote.MAX_ADB_MINUTES + "(분)입니다");
             }
         }
         String msg = (done.isEmpty() ? "바뀐 것 없음" : String.join(", ", done) + " 적용")

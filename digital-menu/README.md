@@ -140,7 +140,7 @@ curl -X POST http://192.168.0.10:8090/api/menuboard/pos/items -H "X-POS-Key: mbp
    - 결과: `board-app/build/menuboard-player.apk`와 업데이트 묶음 `board-app/build/updates/`. 버전은 `build.sh` 맨 위 `VERSION_CODE`(새 버전마다 1씩 올림)와 `VERSION_NAME`.
    - 서명 키 `.debug.keystore`가 없으면 새로 만듭니다. **업데이트는 같은 키로 서명한 APK만 설치되므로 이 파일을 백업하세요.** 잃으면 설치된 보드는 앱을 지우고 다시 깔아야 합니다.
 2. **설치**: `menuboard-player.apk`를 `install-board-app.bat`과 같은 폴더에 두고, 보드를 USB(또는 adb 네트워크)로 연결한 PC에서 더블클릭합니다. bat이 부팅 자동 실행과 업데이트 설치 권한도 허용합니다. adb가 없으면 APK를 USB 메모리로 옮겨 보드에서 설치하고, 설정 화면의 두 권한 버튼으로 허용합니다.
-3. 보드가 같은 망의 서버를 스스로 찾습니다. 못 찾으면 설정 화면이 뜨니 서버 주소(예: `192.168.0.10:8090`), 화면 번호, 글자 크기 배율(%)을 넣고 저장합니다. adb로는 `--es server`, `--ei screen`, `--ei zoom` 인텐트 값으로도 넣을 수 있습니다.
+3. 보드가 같은 망의 서버를 스스로 찾습니다. 못 찾으면 설정 화면이 뜨니 서버 주소(예: `192.168.0.10:8090`), 화면 번호, 글자 크기 배율(%)을 넣고 저장합니다. adb로는 `--es server`, `--ei screen`, `--ei zoom` 인텐트 값으로도 넣을 수 있습니다(ADB가 켜져 있을 때만 받음). 설정 화면에서는 화면 방향과 밝기도 바꿉니다.
 
 ### 보드 앱 업데이트
 
