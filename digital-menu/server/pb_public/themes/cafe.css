@@ -1,0 +1,33 @@
+/* 테마: 카페 (따뜻한 원목) — 어두운 커피색 바탕에 크림색 글, 둥근 알약 모양 구역 제목.
+   만든 곳: UI팀 시작 키트(2026-11). 이 파일은 :root의 테마 값만 바꾼다. 바꿀 수 있는 값은 docs/themes/README.md */
+:root{
+  --ink:#fbf3e8;
+  --muted:rgba(251,243,232,.7);
+  --base:#1b1310;
+  --veil:linear-gradient(rgba(27,19,16,.62),rgba(20,13,10,.86));
+  --glow:radial-gradient(120% 80% at 0% 0%,var(--brand),transparent 55%);
+  --glow-opacity:.22;
+  --panel:rgba(38,27,21,.82);
+  --line:rgba(255,226,190,.16);
+  --radius:1.1em;
+  --card-border:.06em solid rgba(255,226,190,.18);
+  --card-shadow:0 .35em 1em rgba(0,0,0,.35);
+  --photo-bg:#2a1c15;
+  --top-bg:linear-gradient(90deg,#2a1c15,#1b1310);
+  --top-ink:#fbf3e8;
+  --top-line:.18rem solid var(--brand);
+  --top-shadow:0 .2rem .8rem rgba(0,0,0,.45);
+  --title-bg:var(--brand);
+  --title-ink:var(--on-brand);
+  --title-radius:2em;
+  --title-shadow:0 .15em .5em rgba(0,0,0,.35);
+  --badge-new-bg:#fbf3e8; --badge-new-ink:#3a2418;
+  --badge-best-bg:#e3b778; --badge-best-ink:#2a1a0e;
+  --hot:#ff9e7a; --ice:#9fd3ff;
+  --sold-bg:#140d0a; --sold-ink:#fbf3e8; --sold-line:rgba(251,243,232,.7);
+  --caption-bg:linear-gradient(transparent,rgba(20,13,10,.9)); --caption-ink:#fbf3e8;
+  --band-bg:rgba(20,13,10,.94);
+  --band-ink:#fbf3e8; --band-muted:rgba(251,243,232,.7);
+  --band-line:#e3b778;
+  --call-bg:var(--brand); --call-ink:var(--on-brand);
+}
