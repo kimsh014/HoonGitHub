@@ -38,7 +38,7 @@ onRecordDeleteRequest((e) => {
   e.next()
 }, "sections")
 
-// 지금 백업을 하나 만든다(관리자만). A/S 기사가 POS기를 바꾸거나 업데이트하기 전에 쓴다.
+// 지금 백업을 하나 만든다(관리자만). A/S 기사가 POS기를 바꾸거나 업데이트하기 전에 쓴다. 최근 3개만 남고 자동 백업과 따로 센다.
 routerAdd("POST", "/api/menuboard/backup", (e) => {
   const lib = require(`${__hooks}/safety_lib.js`)
   return e.json(200, { name: lib.backupIfDue(e.app, true) })

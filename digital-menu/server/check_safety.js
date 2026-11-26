@@ -1,7 +1,7 @@
 // 매장 위험 점검표의 서버 쪽 1차 대응(pb_hooks/safety.pb.js, 로그인 횟수 제한 마이그레이션)을 검사한다. 사용: node check_safety.js
 // 임시 폴더로 빈 서버(8095)를 잠깐 띄워 검사하므로 켜 둔 서버(8090)는 건드리지 않는다.
-// 확인하는 것: 자동 백업(만들기, 7개만 남기기), 서버가 켜질 때 지난 번호 비우기, 메뉴가 있는 구역은 지우기 막기,
-// POS기 앞(127.0.0.1)에서만 비밀번호 다시 정하기, 로그인 횟수 제한.
+// 확인하는 것: 자동 백업(손 백업은 따로 3개), 서버가 켜질 때 지난 번호 비우기, 메뉴가 있는 구역은 지우기 막기,
+// POS기 앞(127.0.0.1)에서만 비밀번호 다시 정하기(다른 사이트·주소 이름 바꿔치기 막기), 로그인 횟수 제한.
 const assert = require('assert')
 const fs = require('fs')
 const os = require('os')
@@ -36,6 +36,17 @@ async function fails(what, status, ...args) {
 }
 const auth = (token) => ({ Authorization: token })
 
+// Host 머리글을 바꿔 보내기(fetch는 Host를 못 바꾼다). 응답 상태만 돌려준다.
+function rawStatus(method, url, host, form) {
+  return new Promise((resolve, reject) => {
+    const req = require('http').request({ host: '127.0.0.1', port: PORT, method, path: url,
+      headers: { Host: host, ...(form && { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form) }) } },
+    (res) => { res.resume(); res.on('end', () => resolve(res.statusCode)) })
+    req.on('error', reject)
+    req.end(form)
+  })
+}
+
 let pb = null
 async function startServer(dir, env = {}) {
   pb = spawn(PB, ['serve', '--http', `0.0.0.0:${PORT}`, '--dir', dir, ...dirs], { stdio: 'ignore', env: { ...process.env, ...env } })
@@ -61,9 +72,13 @@ async function main(dir) {
 
   // ── 자동 백업: 관리자만 지금 만들 수 있고, 7개만 남는다 ──
   await fails('사장님 계정으로 백업', 403, 'POST', '/api/menuboard/backup', null, owner)
-  for (let i = 0; i < 9; i++) await ok('백업 ' + (i + 1), 'POST', '/api/menuboard/backup', null, su)
-  const backups = (await ok('백업 목록', 'GET', '/api/backups', null, su)).map((b) => b.key).filter((k) => k.startsWith('@auto_pb_backup_menuboard_'))
-  assert.strictEqual(backups.length, 7, `백업은 7개만 남아야 함: ${backups}`)
+  for (let i = 0; i < 5; i++) await ok('손으로 백업 ' + (i + 1), 'POST', '/api/menuboard/backup', null, su)
+  const backups = (await ok('백업 목록', 'GET', '/api/backups', null, su)).map((b) => b.key)
+  const manual = backups.filter((k) => k.startsWith('@auto_pb_backup_menuboard_manual_'))
+  const daily = backups.filter((k) => k.startsWith('@auto_pb_backup_menuboard_') && !manual.includes(k))
+  assert.strictEqual(manual.length, 3, `손으로 만든 백업은 3개만 남아야 함: ${manual}`)
+  // 서버가 켜질 때는 아직 하루 백업이 없으니 30분 안에(검사에서는 다음 실행 때) 만든다. 손 백업이 자동 백업을 밀어내지 않는다
+  assert.ok(daily.length <= 1, `자동 백업: ${daily}`)
 
   // ── 메뉴가 있는 구역은 지우지 못한다 ──
   const section = await ok('구역', 'POST', '/api/collections/sections/records', { store: sid, name: '커피', sort_order: 1 }, owner)
@@ -83,6 +98,12 @@ async function main(dir) {
     await fails('매장 와이파이에서 계정 목록', 403, 'GET', '/api/menuboard/local-reset', null, {}, lan)
     await fails('매장 와이파이에서 다시 정하기', 403, 'POST', '/api/menuboard/local-reset', { email: 'owner@menu.test', password: 'hacked-password' }, { 'X-Forwarded-For': '127.0.0.1' }, lan)
   } else console.log('  (127.0.0.1 말고 다른 주소가 없어 와이파이에서 막히는지는 건너뜀)')
+  // POS기 브라우저로 연 다른 사이트가 몰래 부르는 것(CSRF)과 주소 이름 바꿔치기(DNS 리바인딩)는 막는다
+  await fails('다른 사이트에서 다시 정하기', 403, 'POST', '/api/menuboard/local-reset', { email: 'owner@menu.test', password: 'hacked-password' }, { Origin: 'http://evil.example' })
+  await fails('다른 사이트에서 계정 목록', 403, 'GET', '/api/menuboard/local-reset', null, { Origin: 'https://evil.example' })
+  assert.strictEqual(await rawStatus('POST', '/api/menuboard/local-reset', 'evil.example:8095', 'email=owner%40menu.test&password=hacked-password'), 403, '주소 이름 바꿔치기는 403')
+  assert.strictEqual(await rawStatus('GET', '/api/menuboard/local-reset', 'localhost:8095'), 200, 'localhost 이름은 된다')
+  await ok('POS기 화면(같은 주소)에서', 'GET', '/api/menuboard/local-reset', null, { Origin: BASE })
   await ok('POS기에서 다시 정하기', 'POST', '/api/menuboard/local-reset', { email: 'owner@menu.test', password: 'new-password-1' })
   await fails('예전 로그인은 끊김', 401, 'POST', '/api/menuboard/pos/key', null, owner)
   await fails('예전 비밀번호', 400, 'POST', '/api/collections/users/auth-with-password', { identity: 'owner@menu.test', password: 'password-1234' })
@@ -115,7 +136,7 @@ async function run() {
   try {
     await startServer(dir)
     await main(dir)
-    console.log('OK: 자동 백업 7개, 켜질 때 지난 번호 비우기, 메뉴 있는 구역 지우기 막기, POS기 앞에서만 비밀번호 다시 정하기, 로그인 횟수 제한 모두 설계대로입니다.')
+    console.log('OK: 손 백업 3개(자동 백업과 따로), 켜질 때 지난 번호 비우기, 메뉴 있는 구역 지우기 막기, POS기 앞에서만 비밀번호 다시 정하기, 로그인 횟수 제한 모두 설계대로입니다.')
   } catch (err) {
     failed = true
     console.error(err)

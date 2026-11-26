@@ -210,7 +210,7 @@
       .then(function (r) { return r.id })
   }
 
-  // 구역을 지우면 그 구역의 메뉴도 같이 지워진다
+  // 구역에 메뉴가 있으면 서버가 400으로 거절한다(메뉴까지 같이 지워지는 사고 막기)
   function deleteSection(storeId, sectionId) { return remove('sections', sectionId) }
 
   function setSoldOut(storeId, itemId, soldOut) {

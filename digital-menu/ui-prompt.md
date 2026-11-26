@@ -73,7 +73,7 @@ B. 수정 화면 일곱 개 (매장 POS의 큰 화면과 폰 화면 모두에서
   POS 상품 코드는 item.posCode(지우려면 null, 넘기지 않으면 그대로).
 - deleteItem(storeId, itemId) : 메뉴 삭제
 - saveSection(storeId, section) : 구역 추가·수정. 저장한 구역의 id를 돌려준다.
-- deleteSection(storeId, sectionId) : 구역 삭제. 그 구역의 메뉴도 함께 지워지므로 지우기 전에 묻는다.
+- deleteSection(storeId, sectionId) : 구역 삭제. 구역에 메뉴가 있으면 서버가 400("이 구역에 메뉴 N개가 있습니다…")으로 거절하므로, 화면은 지우기 전에 메뉴 수를 보고 먼저 옮기거나 지우라고 안내한다.
 - setSoldOut(storeId, itemId, soldOut) : 품절 켜고 끄기
 - saveScreens(storeId, screens) : TV 화면 구성 전체 저장. 화면 번호(no)로 맞춰 고치고, 빠진 번호는 지운다.
   홍보 이미지는 screen.imageFile에 파일로 담고, 지우려면 screen.imageUrl을 null로 둔다. 문구는 앞 두 줄만 저장된다.

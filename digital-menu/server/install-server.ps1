@@ -119,6 +119,15 @@ New-Item -ItemType Directory -Path (Join-Path $Root 'logs') -Force | Out-Null
 $acl = Invoke-Exe "$env:SystemRoot\System32\icacls.exe" @($Root, '/inheritance:r', '/grant:r', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-545:(OI)(CI)RX', '/T', '/C', '/Q')
 if ($acl.Code -ne 0) { Warn "폴더 권한을 바꾸지 못했습니다(일반 사용자가 서버 파일을 고칠 수 있음): $($acl.Out)" }
 else { Ok '폴더 권한: 관리자·SYSTEM만 쓰기, 일반 사용자는 읽기만.' }
+# 메뉴·계정 DB(비밀번호 해시, 로그인 토큰 키)와 백업, 로그, A/S 비밀번호 파일은 일반 사용자가 읽지도 못하게 한다.
+New-Item -ItemType Directory -Path (Join-Path $Root 'pb_data') -Force | Out-Null
+foreach ($p in @((Join-Path $Root 'pb_data'), (Join-Path $Root 'logs'))) {
+    $r = Invoke-Exe "$env:SystemRoot\System32\icacls.exe" @($p, '/inheritance:r', '/grant:r', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-18:(OI)(CI)F', '/T', '/C', '/Q')
+    if ($r.Code -ne 0) { Warn "권한을 줄이지 못했습니다: $p" }
+}
+if (Test-Path -LiteralPath $PwFile) {
+    $null = Invoke-Exe "$env:SystemRoot\System32\icacls.exe" @($PwFile, '/inheritance:r', '/grant:r', '*S-1-5-32-544:(R,D)', '*S-1-5-18:(R)')
+}
 
 Step '2. 돌고 있는 서버 끄기'
 $null = Stop-OurTask
@@ -242,7 +251,7 @@ $trigger = New-ScheduledTaskTrigger -AtStartup
 $taskUser = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
-    -StartWhenAvailable -MultipleInstances IgnoreNew -DontStopOnIdleEnd -Hidden -Priority 6
+    -StartWhenAvailable -MultipleInstances IgnoreNew -DontStopOnIdleEnd -Priority 6
 $null = Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $taskUser -Settings $settings `
     -Description '디지털 메뉴판 서버(PocketBase :8090). 서버가 꺼지면 run-server.ps1 이 5초 뒤 다시 켠다. 로그: logs 폴더' -Force
 Start-ScheduledTask -TaskName $TaskName

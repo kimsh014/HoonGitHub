@@ -26,6 +26,7 @@ label{display:inline-flex;align-items:center;gap:.25rem}
 img{height:3rem;vertical-align:middle}
 .won{color:#555;min-width:5rem}
 .note{color:#555;font-size:.85em}
+.warn{background:#fee;border-left:4px solid #c00;padding:.5rem;margin:.25rem 0}
 .tag{background:#eef;border-radius:.3rem;padding:0 .4rem;font-size:.85em}
 .tag.off{background:#fdd}
 .sold{opacity:.5}
@@ -221,8 +222,29 @@ function photoPicker(url, clearText) {
 // 도는 동안 화면의 버튼을 모두 잠가 두 번 눌리지 않게 하고, 누른 버튼 글자를 busyText(기본 "저장 중…")로 바꾼다.
 // work는 Promise를 돌려주는 함수, done은 성공 문구(또는 결과를 받아 문구를 돌려주는 함수). 성공하면 true로 끝난다.
 var busy = false
+// 고치고 아직 저장하지 않은 줄(점검표 M-23). 저장이 끝나면 화면을 다시 그리므로 다른 줄의 수정은 사라진다.
+function markDirty(e) {
+  var t = e.target
+  if (!t || t.closest('#calls, #soldout')) return // 번호 호출·품절 목록은 누르면 바로 저장된다
+  var row = t.closest('.row') || t.closest('section')
+  if (row) row.setAttribute('data-dirty', '1')
+}
+function otherDirty(btn) {
+  var mine = btn && (btn.closest('.row') || null)
+  var section = btn && btn.closest('section')
+  return Array.prototype.filter.call(document.querySelectorAll('#app [data-dirty]'), function (r) {
+    if (mine && (r === mine || r.contains(mine))) return false
+    if (!mine && section && section.contains(r)) return false // "화면 구성 저장"처럼 구역 전체를 저장하는 버튼
+    return true
+  }).length
+}
 function run(btn, work, done, busyText) {
   if (busy) return Promise.resolve(false)
+  var others = otherDirty(btn)
+  if (others && !confirm('저장하지 않은 다른 수정이 ' + others + '곳 있습니다. 지금 저장하면 그 수정은 사라집니다. 계속할까요?\n(취소를 누르고 그 줄의 [저장]을 먼저 누르세요.)')) {
+    say('저장하지 않았습니다.')
+    return Promise.resolve(false)
+  }
   busy = true
   var locked = Array.prototype.filter.call(
     document.querySelectorAll('#app button, #app input[type=checkbox], #app input[type=file], #app select'),
@@ -507,13 +529,20 @@ function drawScreens() {
       })
     }, '화면 구성을 저장했습니다.')
   })
-  fill($('screens'), [list,
+  // 없는 화면 번호를 띄운 TV(점검표 M-24): 손님 앞에는 매장 이름만 나오므로 여기서 알려 준다
+  var lost = (devices || []).filter(function (d) {
+    return d.screen != null && !board.screens.some(function (x) { return x.no === d.screen })
+  }).map(function (d) {
+    return el('p', { className: 'warn', textContent: (d.name || '이름 없는 TV') + '는 ' + d.screen + '번 화면을 띄우고 있는데 ' +
+      d.screen + '번 화면이 없습니다. 그 TV에는 매장 이름만 나옵니다. 화면을 더하거나 TV 관리 화면에서 화면 번호를 바꿔 주세요.' })
+  })
+  fill($('screens'), lost.concat([list,
     button('화면 더하기', function () {
       var next = 1
       rows.forEach(function (r) { var n = r().no; if (n >= next) next = n + 1 })
       list.appendChild(row({ no: next, type: 'grid' }))
     }),
-    save])
+    save]))
 }
 
 // ── TV 미리보기 ──
@@ -543,6 +572,8 @@ function layoutPreview() {
 $('pvTurn').onclick = function () { preview.portrait = !preview.portrait; layoutPreview() }
 $('pvClose').onclick = function () { $('preview').hidden = true; fill($('pvFrame'), []) }
 window.addEventListener('resize', layoutPreview)
+$('app').addEventListener('input', markDirty)
+$('app').addEventListener('change', markDirty)
 
 function start(session) {
   me = session
@@ -555,7 +586,13 @@ function logout() { api.logout().then(function () { start(null) }) }
 
 $('login').onclick = function () {
   api.login($('email').value, $('password').value).then(start).then(function () { say('') })
-    .catch(function (err) { say('로그인 실패: ' + err.message) })
+    .catch(function (err) { say(loginError(err)) })
+}
+// 서버의 영어 오류 대신 사장님이 다음에 할 일을 알려 준다
+function loginError(err) {
+  if (err.status === 429) return '로그인을 너무 여러 번 시도했습니다. 1분 뒤에 다시 해 주세요.'
+  if (err.status === 400) return '이메일이나 비밀번호가 틀렸습니다. 비밀번호를 잊었으면 POS기에서 127.0.0.1:8090/reset.html 을 여세요.'
+  return '로그인 실패: ' + err.message
 }
 $('signUp').onclick = function () {
   api.signUp($('email').value, $('password').value, $('storeName').value).then(start).then(function () { say('설치를 마쳤습니다.') })

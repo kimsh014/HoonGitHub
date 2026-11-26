@@ -18,7 +18,7 @@
 2. POS기의 Windows 관리자 계정 비밀번호.
 3. 공유기 관리자 화면에 들어갈 수 있는 비밀번호(고정 IP를 잡을 때).
 4. A/S 기록지(관리자 비밀번호를 옮겨 적을 곳).
-5. "공유기·인터넷 바꾸기 전 A/S 문의" 스티커.
+5. "공유기·인터넷 바꾸기 전 A/S 문의" 스티커, POS기에 붙일 "아침에 전원만 켜면 메뉴판이 저절로 뜹니다" 스티커.
 
 ---
 
@@ -178,7 +178,7 @@ TV(보드) 앱 설치는 `board-app\install-board-app.bat` 을 씁니다(README 
 
 ## 9. 비밀번호를 잊었을 때
 
-- **사장님(메뉴 수정 화면) 비밀번호**: POS기에서 `http://127.0.0.1:8090/reset.html` 을 열어 다시 정합니다. POS기에서만 됩니다. (이 화면은 서버 쪽에서 만드는 중입니다. 들어가기 전까지는 A/S 관리자 화면 `/_/` 의 **Collections** → `users` 에서 바꿉니다.)
+- **사장님(메뉴 수정 화면) 비밀번호**: POS기에서 `http://127.0.0.1:8090/reset.html` 을 열어 다시 정합니다. POS기에서만 됩니다. 바꾸면 그 계정으로 로그인해 있던 폰·PC는 모두 로그아웃됩니다.
 - **A/S 관리자 비밀번호**: POS기에서 `install-server.bat --reset` 으로 새로 만듭니다.
   1. 시작 메뉴에서 `cmd` 를 찾아 마우스 오른쪽 단추 → **관리자 권한으로 실행**.
   2. `cd /d C:\MenuBoard\server` 를 입력하고 Enter.
@@ -190,8 +190,10 @@ TV(보드) 앱 설치는 `board-app\install-board-app.bat` 을 씁니다(README 
 ## 10. 점검할 때 (창을 띄워 서버 보기)
 
 - 서버 로그: `C:\MenuBoard\server\logs\server-오늘날짜.log` 를 메모장으로 엽니다.
-- 서버를 창으로 띄워 보려면 먼저 관리자 `cmd` 에서 `schtasks /end /tn MenuBoardServer` 로 자동 실행 서버를 끈 뒤 `start-server.bat` 을 더블클릭합니다. 점검이 끝나면 그 창을 닫고 `schtasks /run /tn MenuBoardServer` 로 다시 켭니다(또는 POS기 다시 시작).
+- 서버를 창으로 띄워 보려면 먼저 관리자 `cmd` 에서 `schtasks /end /tn MenuBoardServer` 로 자동 실행 서버를 끄고, 작업 관리자에서 `pocketbase.exe` 가 남아 있으면 **작업 끝내기**를 누른 뒤 `start-server.bat` 을 더블클릭합니다(관리자 권한을 묻으면 **예**). 점검이 끝나면 그 창을 닫고 `schtasks /run /tn MenuBoardServer` 로 다시 켭니다(또는 POS기 다시 시작).
 - 자동 실행 서버가 도는 중에 `start-server.bat` 을 켜면 8090 포트가 겹친다는 경고가 나옵니다.
+- 설치 뒤 서버 폴더는 관리자만 고칠 수 있습니다. `pb_public` 같은 파일을 바꿀 때는 관리자 권한을 묻는 창에서 **계속**을 누르거나, 새 배포 묶음으로 `install-server.bat` 을 다시 실행합니다.
+- TV의 A/S 연결은 POS기에서 `http://127.0.0.1:8090/devices.html` 을 열어 A/S 관리자 계정으로 엽니다. 기사 폰에서 열면 관리자 비밀번호가 매장 와이파이로 암호화 없이 갑니다.
 
 ---
 

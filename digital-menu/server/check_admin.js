@@ -206,6 +206,20 @@ async function main(browser) {
   assert.strictEqual((await api('/api/collections/screens/records')).items.length, 1)
   console.log('  TV 미리보기, TV가 쓰는 화면 지우기 확인')
 
+  // ── 없는 화면 번호를 띄운 TV는 화면 구성에 경고 (M-24) ──
+  await call('POST', '/api/menuboard/devices/report', { version: '1', model: 'test', reported: { screen: 3 } }, { 'X-Device-Token': tv.token })
+  await page.reload()
+  await page.locator('#screens .warn', { hasText: '카운터 TV는 3번 화면을 띄우고 있는데 3번 화면이 없습니다' }).waitFor({ timeout: 10000 })
+
+  // ── 저장 안 한 다른 줄이 있으면 묻는다 (M-23) ──
+  await page.locator('#items .row').first().locator('input[placeholder="메뉴 이름"]').fill('고친이름')
+  answers.push('dismiss')
+  await page.locator('#store').getByRole('button', { name: '저장' }).click()
+  await msg('저장하지 않았습니다')
+  assert.match(dialogs[dialogs.length - 1], /저장하지 않은 다른 수정이 1곳 있습니다/)
+  assert.strictEqual(await page.locator('#items .row').first().locator('input[placeholder="메뉴 이름"]').inputValue(), '고친이름')
+  console.log('  없는 화면을 띄운 TV 경고, 저장 안 한 줄이 있으면 확인')
+
   // ── 폰 크기: 옆으로 넘치지 않음 ──
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()

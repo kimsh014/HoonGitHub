@@ -25,17 +25,25 @@ function stamp(d) {
   return "" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()) + p(d.getMilliseconds(), 3)
 }
 
-// 백업할 때가 되었으면 백업하고 7개 넘는 옛 백업을 지운다. 만든 백업 이름(안 만들었으면 "")을 돌려준다.
-function backupIfDue(app, force) {
-  const list = backupNames(app)
+// A/S 기사가 누른 백업은 이름을 따로 두고 따로 센다. 여러 번 눌러도 매일 자동 백업이 밀려 지워지지 않게.
+const MANUAL_PREFIX = BACKUP_PREFIX + "manual_"
+const MANUAL_KEEP = 3
+
+// 백업할 때가 되었으면 백업하고 7개(손으로 만든 것은 3개) 넘는 옛 백업을 지운다. 만든 백업 이름(안 만들었으면 "")을 돌려준다.
+function backupIfDue(app, manual) {
+  const isManual = (f) => f.key.indexOf(MANUAL_PREFIX) === 0
+  const list = backupNames(app).filter((f) => !isManual(f))
   const nowSec = Math.floor(Date.now() / 1000)
   // 시계가 뒤로 간 경우(CMOS 배터리)도 "미래의 백업"을 믿지 않고 새로 만든다
-  if (!force && list.length && list[0].at <= nowSec && nowSec - list[0].at < BACKUP_EVERY_SECONDS) return ""
-  const name = BACKUP_PREFIX + stamp(new Date()) + ".zip"
+  if (!manual && list.length && list[0].at <= nowSec && nowSec - list[0].at < BACKUP_EVERY_SECONDS) return ""
+  const name = (manual ? MANUAL_PREFIX : BACKUP_PREFIX) + stamp(new Date()) + ".zip"
   app.createBackup(new Context(), name)
   const fsys = app.newBackupsFilesystem()
   try {
-    backupNames(app).slice(BACKUP_KEEP).forEach((f) => {
+    const all = backupNames(app)
+    const auto = all.filter((f) => !isManual(f)).slice(BACKUP_KEEP)
+    const hand = all.filter(isManual).slice(MANUAL_KEEP)
+    auto.concat(hand).forEach((f) => {
       fsys.delete(f.key)
       try { fsys.delete(f.key + ".attrs") } catch (err) {}
     })
@@ -70,11 +78,24 @@ function isLocal(e) {
   return ip === "127.0.0.1" || ip === "::1"
 }
 
+// 주소(Host·Origin)의 이름이 이 컴퓨터 자신인지. 포트는 보지 않는다.
+function loopbackName(hostPort) {
+  const m = String(hostPort || "").toLowerCase().match(/^(\[[^\]]*\]|[^:]*)/)
+  const name = m ? m[1] : ""
+  return name === "127.0.0.1" || name === "localhost" || name === "[::1]"
+}
+
+// POS기 브라우저에서 연 다른 사이트가 몰래 이 경로를 부르지 못하게(점검표 B-11) 주소 이름도 본다:
+// - Host가 127.0.0.1·localhost가 아니면 거절(주소 이름 바꿔치기, DNS 리바인딩)
+// - Origin이 있으면 그것도 127.0.0.1·localhost여야 함(다른 사이트의 fetch·양식 보내기)
 function requireLocal(e) {
-  if (!isLocal(e)) throw new ForbiddenError("비밀번호 다시 정하기는 POS기에서 http://127.0.0.1:8090/reset.html 로 열어야 합니다.")
+  const origin = e.request.header.get("Origin")
+  if (!isLocal(e) || !loopbackName(e.request.host) || (origin && !loopbackName(origin.replace(/^[a-z]+:\/\//i, "")))) {
+    throw new ForbiddenError("비밀번호 다시 정하기는 POS기에서 http://127.0.0.1:8090/reset.html 로 열어야 합니다.")
+  }
 }
 
 module.exports = {
-  BACKUP_PREFIX, BACKUP_KEEP, CALL_KEEP_MINUTES,
+  BACKUP_PREFIX, BACKUP_KEEP, MANUAL_PREFIX, MANUAL_KEEP, CALL_KEEP_MINUTES,
   backupNames, backupIfDue, clearOldCalls, isLocal, requireLocal,
 }
