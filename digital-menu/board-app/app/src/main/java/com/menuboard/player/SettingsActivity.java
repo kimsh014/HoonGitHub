@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.InputType;
 import android.util.TypedValue;
@@ -29,6 +31,12 @@ public class SettingsActivity extends Activity {
     private EditText server, screen, zoom, rotation, brightness;
     private TextView status;
     private Button overlay, unknown;
+
+    // 리모컨 확인 버튼을 실수로 2초 눌러 열린 경우, 손님 앞에 설정 화면이 계속 떠 있지 않게 2분 동안 손대지 않으면 메뉴판으로 돌아간다
+    private static final long IDLE_MS = 2 * 60 * 1000;
+    private final Handler idle = new Handler(Looper.getMainLooper());
+    private final Runnable leave = this::leaveIfIdle;
+    private boolean busy; // 업데이트를 받는 중에는 닫지 않는다
 
     @Override
     protected void onCreate(Bundle state) {
@@ -77,6 +85,7 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        resetIdle();
         // 권한 화면에서 돌아오면 이미 허용된 버튼은 숨긴다
         overlay.setVisibility(Settings.canDrawOverlays(this) ? View.GONE : View.VISIBLE);
         unknown.setVisibility(getPackageManager().canRequestPackageInstalls() ? View.GONE : View.VISIBLE);
@@ -100,6 +109,28 @@ public class SettingsActivity extends Activity {
         }).start();
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        idle.removeCallbacks(leave);
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        resetIdle();
+    }
+
+    private void resetIdle() {
+        idle.removeCallbacks(leave);
+        idle.postDelayed(leave, IDLE_MS);
+    }
+
+    private void leaveIfIdle() {
+        if (busy) resetIdle();
+        else finish();
+    }
+
     private void update() {
         String s = prefs.getString("server", null);
         if (s == null) {
@@ -107,6 +138,7 @@ public class SettingsActivity extends Activity {
             return;
         }
         status.setText("업데이트 확인 중…");
+        busy = true;
         new Thread(() -> {
             Updater.Info info = Updater.check(this, s);
             String msg;
@@ -117,7 +149,11 @@ public class SettingsActivity extends Activity {
                 String err = Updater.downloadAndInstall(this, s, info);
                 msg = err != null ? err : info.name + " 설치를 시작했습니다. 화면에 뜨는 '설치'를 눌러 주세요";
             }
-            runOnUiThread(() -> status.setText(msg));
+            runOnUiThread(() -> {
+                busy = false;
+                status.setText(msg);
+                resetIdle();
+            });
         }).start();
     }
 
