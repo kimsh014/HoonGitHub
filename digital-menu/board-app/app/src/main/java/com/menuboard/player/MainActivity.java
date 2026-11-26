@@ -656,12 +656,12 @@ public class MainActivity extends Activity {
         if (m.containsKey("as")) {
             try {
                 int min = Integer.parseInt(m.get("as"));
-                if (min < 0 || min > 240) throw new NumberFormatException();
+                if (min < 0 || min > 60) throw new NumberFormatException();
                 Remote.setAdbWindow(this, min * 60L);
                 done.add(min == 0 ? "A/S 연결 잠금" : "A/S 연결 " + min + "분");
                 if (!Remote.canAdb(this)) errors.add("A/S 연결 권한 없음(install-board-app.bat 필요)");
             } catch (NumberFormatException e) {
-                errors.add("as 는 0~240(분)입니다");
+                errors.add("as 는 0~60(분)입니다");
             }
         }
         String msg = (done.isEmpty() ? "바뀐 것 없음" : String.join(", ", done) + " 적용")
