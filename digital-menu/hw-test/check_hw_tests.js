@@ -1,6 +1,7 @@
 // 하드웨어 시험표(hw-tests.json)를 검사하고, 사람이 인쇄해 쓰는 시험표(docs/hw-test/시험표.md)를 만든다.
 //   node check_hw_tests.js          검사만(시험표.md 가 json과 다르면 실패)
 //   node check_hw_tests.js --write  시험표.md 를 다시 만든다
+// P·N·S 는 이 시험표에만 있는 번호(키패드 앱의 K 번호는 docs/order-app.md).
 // 검사: 번호 겹침, 묶음이 없는 항목을 가리키는지, 자동 검사 이름이 hw-test.ps1 에 있는지,
 //       위험 점검표의 H 항목이 모두 시험표에 있는지, .ps1 BOM·.bat ASCII.
 const fs = require('fs')
@@ -18,7 +19,7 @@ const ids = new Set()
 for (const it of tests.items) {
   if (ids.has(it.id)) errors.push(`항목 번호 겹침: ${it.id}`)
   ids.add(it.id)
-  if (!/^[HPKS]-\d+$/.test(it.id)) errors.push(`항목 번호 형식: ${it.id}`)
+  if (!/^[HPNS]-\d+$/.test(it.id)) errors.push(`항목 번호 형식: ${it.id}`)
   const ns = new Set()
   for (const s of it.steps) {
     if (ns.has(s.n)) errors.push(`${it.id} 단계 번호 겹침: ${s.n}`)
@@ -54,7 +55,7 @@ md += '# 하드웨어 시험표 (11/30~12/10)\n\n'
 md += '> 이 파일은 `digital-menu/hw-test/hw-tests.json` 에서 만든 것입니다(`node check_hw_tests.js --write`). 고칠 때는 json을 고칩니다.\n'
 md += '> 시험은 POS기에서 `digital-menu/hw-test/run-hw-test.bat` 을 더블클릭해 진행하면 결과가 자동으로 저장됩니다. 이 표는 인쇄해 옆에 두거나 스크립트 없이 손으로 할 때 씁니다.\n\n'
 md += '- **자동**: 스크립트가 직접 검사합니다. **사람**: 보고 통과/실패를 고릅니다. **값**: 숫자를 적습니다(Enter만 누르면 초시계).\n'
-md += '- H 번호는 `docs/risk-register.md` 하드웨어 시험 표와 같습니다. P(준비)·K(키패드)·S(판매 프로그램과 함께)는 이 시험표에만 있습니다.\n\n'
+md += '- H 번호는 `docs/risk-register.md` 하드웨어 시험 표와 같습니다. P(준비)·N(번호 처리·키패드)·S(판매 프로그램과 함께)는 이 시험표에만 있습니다.\n\n'
 md += '## 시험 순서\n\n| 묶음 | 날짜 | 내용 | 항목 |\n|---|---|---|---|\n'
 for (const p of tests.plans) md += `| ${p.id} | ${p.day} | ${p.title} | ${p.items.join(', ')} |\n`
 md += '\n'
@@ -124,7 +125,7 @@ else if (!fs.existsSync(outFile) || fs.readFileSync(outFile, 'utf8') !== md) err
 const steps = tests.items.reduce((n, it) => n + it.steps.length, 0)
 const autos = tests.items.reduce((n, it) => n + it.steps.filter((s) => s.auto).length, 0)
 console.log(`항목 ${tests.items.length}개, 단계 ${steps}개(자동 ${autos}), 자동 검사 ${checks.size}종, 점검표 H ${regH.length}개`)
-if (notInRegister.length) console.log(`참고: 점검표(이 브랜치)에 아직 없는 H: ${notInRegister.join(', ')} (PR #11 병합 뒤 들어옴)`)
+if (notInRegister.length) console.log(`참고: 점검표(이 브랜치)에 아직 없는 H: ${notInRegister.join(', ')} (PR #11·#12 병합 뒤 들어옴)`)
 if (errors.length) {
   for (const e of errors) console.log('실패: ' + e)
   process.exit(1)

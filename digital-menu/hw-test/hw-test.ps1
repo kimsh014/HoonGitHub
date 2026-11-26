@@ -591,6 +591,8 @@ $script:Checks['win.firewall'] = {
         $desc += "$($r.DisplayName): $($r.Direction)/$($r.Action)/사용 $($r.Enabled)/포트 $($pf.LocalPort)/원격 $($af.RemoteAddress -join ',')/프로필 $($r.Profile)"
         if ([string]$r.Enabled -ne 'True') { $fails += "$($r.DisplayName) 꺼짐" }
         if (($af.RemoteAddress -join ',') -notmatch 'LocalSubnet') { $fails += "$($r.DisplayName) 원격 주소가 같은 망(LocalSubnet)으로 제한되지 않음" }
+        $prof = [string]$r.Profile
+        if ($prof -ne 'Any' -and -not ($prof -match 'Domain' -and $prof -match 'Private' -and $prof -match 'Public')) { $fails += "$($r.DisplayName) 프로필이 $prof (공용 망에서 막힘, B-5)" }
     }
     $exe = Join-Path $ServerDir 'pocketbase.exe'
     $blocks = @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Where-Object { $_.Program -and $_.Program -ieq $exe } |
@@ -877,6 +879,8 @@ $script:Checks['tv.openAdb'] = {
     }
     if (-not $r.ok) { return (Res 'fail' "A/S 연결 열기 실패 HTTP $($r.code): $($r.body)") }
     $script:AdbOpened += $tv.id
+    $script:Run | Add-Member -NotePropertyName adbOpened -NotePropertyValue @(@($script:Run.adbOpened) + $tv.id | Where-Object { $_ } | Select-Object -Unique) -Force
+    Save-Run
     Say '   TV가 A/S 연결을 켜기를 기다립니다(최대 40초)…'
     $rec = $null
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -1102,6 +1106,7 @@ $script:Checks['load.calls'] = {
     $maxMs = if ($a -and $a.maxMs) { [int]$a.maxMs } else { 2000 }
     $store = Get-StoreId
     if (-not $store) { return (Res 'fail' '매장 번호를 모름(서버에 매장이 여럿이면 매장 계정으로 로그인)') }
+    if (-not (Confirm-Calls)) { return (Res 'skip' '사람이 번호 부르기를 취소함') }
     $base = 900 + ((UnixNow) % 90) * 10
     $ms = @(); $bad = @(); $nums = @()
     for ($i = 0; $i -lt $count; $i++) {
@@ -1119,6 +1124,15 @@ $script:Checks['load.calls'] = {
     return (Res 'pass' $d $v)
 }
 
+# 시험 번호(900·9000번대)를 실제 TV에 띄우기 전에 한 번 묻는다(영업 중 매장 보호).
+$script:CallsOk = $false
+function Confirm-Calls {
+    if ($script:CallsOk -or -not $script:Interactive -or $script:Answers.Count -gt 0) { return $true }
+    $a = Ask '   시험 번호(900·9000번대)를 실제로 불러 TV에 띄웁니다. 영업 중이 아니죠? [y/N]' 'n'
+    $script:CallsOk = ($a -match '^[yY]')
+    return $script:CallsOk
+}
+
 # 연속 운영 기록(H-5). 끊겨도 다시 돌리면 monitor.csv 에 이어서 적는다.
 $script:Checks['monitor'] = {
     param($a)
@@ -1129,7 +1143,7 @@ $script:Checks['monitor'] = {
     $loggedIn = Ensure-Login
     $csv = Ev 'monitor.csv'
     if (-not (Test-Path -LiteralPath $csv)) {
-        [IO.File]::WriteAllText($csv, "time,server_ok,server_ms,pb_mb,pb_handles,c_free_gb,pb_data_mb,tv_online,tv_total,tv_max_age_s,tv_app_mb,tv_temp_c,calls_ok,calls_fail`r`n", $Utf8)
+        [IO.File]::WriteAllText($csv, "time,server_ok,server_ms,pb_mb,pb_handles,c_free_gb,pb_data_mb,tv_online,tv_total,tv_max_age_s,tv_app_mb,tv_temp_c,calls_ok,calls_fail,pb_pid`r`n", $Utf8)
     }
     $untilFile = Ev 'monitor-until.txt'
     if (Test-Path -LiteralPath $untilFile) { $until = [datetime]::Parse([IO.File]::ReadAllText($untilFile)) }
@@ -1137,6 +1151,8 @@ $script:Checks['monitor'] = {
     Say "   $($until.ToString('MM-dd HH:mm'))까지 $every 분마다 적습니다. 이 창을 닫지 마세요(닫혀도 -Resume 으로 이어짐)." 'Yellow'
     $carry = 0.0
     $store = if ($loggedIn) { Get-StoreId } else { '' }
+    if ($store -and $cph -gt 0 -and -not (Confirm-Calls)) { $cph = 0 }
+    $lastPid = ''
     $num = 9000
     while ((Get-Date) -lt $until) {
         $h = Http 'GET' '/api/health' -timeout 5 -NoAuth
@@ -1168,7 +1184,8 @@ $script:Checks['monitor'] = {
                 if ($r.ok) { $cOk++ } else { $cFail++ }
             }
         }
-        $row = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'),$([int]$h.ok),$($h.ms),$pbMb,$hand,$free,$dataMb,$on,$tot,$maxAge,$tvMb,$temp,$cOk,$cFail"
+        $pids = (@($pb | ForEach-Object { $_.ProcessId }) -join ' ')
+        $row = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'),$([int]$h.ok),$($h.ms),$pbMb,$hand,$free,$dataMb,$on,$tot,$maxAge,$tvMb,$temp,$cOk,$cFail,$pids"
         [IO.File]::AppendAllText($csv, "$row`r`n", $Utf8)
         Write-Host ("   {0}  서버 {1} {2}ms  pb {3}MB  C {4}GB  TV {5}/{6}  TV앱 {7}MB {8}도  번호 +{9}" -f (Get-Date -Format 'MM-dd HH:mm'), $(if ($h.ok) { '정상' } else { '응답없음' }), $h.ms, $pbMb, $free, $on, $tot, $tvMb, $temp, $cOk)
         $sleep = [int]($every * 60)
@@ -1192,7 +1209,21 @@ function Summarize-Monitor([string]$csv, [double]$every) {
     $calls = ($rows | Measure-Object calls_ok -Sum).Sum
     $callFail = ($rows | Measure-Object calls_fail -Sum).Sum
     $tvm = @($rows | Where-Object { $_.tv_app_mb -ne '' } | ForEach-Object { [double]$_.tv_app_mb })
-    $d = "기록 $($rows.Count)줄($($rows[0].time) ~ $($rows[-1].time)), 서버 응답 실패 $srvFail 번, pocketbase $pbFirst→최대 $pbMax MB, C 최저 $freeMin GB, TV 최장 안 보임 $ageMax 초, 번호 $calls 번(실패 $callFail)"
+    # 빈 시간(기록 간격이 기준의 2배 넘음), 예상 줄 수, 서버가 다시 시작된 횟수(PID 바뀜)
+    $times = @($rows | ForEach-Object { [datetime]::ParseExact($_.time, 'yyyy-MM-dd HH:mm:ss', $null) })
+    $maxGapMin = 0
+    for ($i = 1; $i -lt $times.Count; $i++) { $g = ($times[$i] - $times[$i - 1]).TotalMinutes; if ($g -gt $maxGapMin) { $maxGapMin = $g } }
+    $maxGapMin = [math]::Round($maxGapMin, 1)
+    $spanMin = ($times[-1] - $times[0]).TotalMinutes
+    $untilFile = Join-Path (Split-Path $csv) 'monitor-until.txt'
+    $expected = 0
+    if (Test-Path -LiteralPath $untilFile) {
+        $until = [datetime]::Parse([IO.File]::ReadAllText($untilFile))
+        $expected = [math]::Floor((($until - $times[0]).TotalMinutes) / $every)
+    }
+    $restarts = 0; $prev = ''
+    foreach ($r in $rows) { if ($r.pb_pid -and $prev -and $r.pb_pid -ne $prev) { $restarts++ }; if ($r.pb_pid) { $prev = $r.pb_pid } }
+    $d = "기록 $($rows.Count)줄(예상 약 $expected 줄, $($rows[0].time) ~ $($rows[-1].time)), 가장 긴 빈 시간 $maxGapMin 분, 서버 다시 시작 $restarts 번, 서버 응답 실패 $srvFail 번, pocketbase $pbFirst→최대 $pbMax MB, C 최저 $freeMin GB, TV 최장 안 보임 $ageMax 초, 번호 $calls 번(실패 $callFail)"
     if ($tvm.Count) { $d += ", TV 앱 메모리 $($tvm[0])→최대 $(($tvm | Measure-Object -Maximum).Maximum) MB" }
     $fails = @()
     if ($srvFail -gt 0) { $fails += '서버 응답 실패 있음' }
@@ -1200,7 +1231,10 @@ function Summarize-Monitor([string]$csv, [double]$every) {
     if ($null -ne $freeMin -and $freeMin -lt 5) { $fails += 'C 빈 공간 5GB 미만' }
     if ($null -ne $ageMax -and $ageMax -gt 300) { $fails += 'TV가 5분 넘게 안 보인 적 있음' }
     if ($callFail -gt 0) { $fails += '번호 부르기 실패 있음' }
-    $v = @{ rows = $rows.Count; serverFail = $srvFail; pbFirstMB = $pbFirst; pbMaxMB = $pbMax; freeMinGB = $freeMin; tvMaxAgeS = $ageMax; calls = $calls }
+    if ($maxGapMin -gt [math]::Max(20, $every * 2)) { $fails += "기록이 $maxGapMin 분 비었음(POS기가 꺼졌거나 창이 닫힘)" }
+    if ($expected -ge 30 -and $rows.Count -lt $expected * 0.9) { $fails += '기록 줄 수가 예상의 90% 미만' }
+    if ($restarts -gt 0) { $fails += "서버가 $restarts 번 다시 시작됨(메모리 비교가 그만큼 짧음)" }
+    $v = @{ rows = $rows.Count; expected = $expected; maxGapMin = $maxGapMin; restarts = $restarts; serverFail = $srvFail; pbFirstMB = $pbFirst; pbMaxMB = $pbMax; freeMinGB = $freeMin; tvMaxAgeS = $ageMax; calls = $calls }
     if ($fails.Count) { return (Res 'fail' ("$d — " + ($fails -join ', ')) $v @($csv)) }
     return (Res 'pass' $d $v @($csv))
 }
@@ -1211,7 +1245,7 @@ $script:CurStep = ''
 $script:StepStart = $null
 # 사람이 아무것도 하지 않아도 되는 검사(-AutoOnly 때 이것만 돈다)
 $script:Passive = @('build.apk', 'server.health', 'server.lan', 'server.task', 'win.bootToServer', 'win.firewall', 'win.power', 'win.updateHours',
-    'win.defender', 'win.antivirus', 'win.folderAcl', 'win.clock', 'server.backups', 'tv.list', 'tv.shot', 'tv.openAdb',
+    'win.defender', 'win.antivirus', 'win.folderAcl', 'win.clock', 'server.backups', 'tv.list', 'tv.shot',
     'adb.info', 'adb.app', 'adb.home', 'adb.crash', 'adb.mem', 'adb.wifi')
 
 function Status-Ko([string]$s) {
@@ -1483,10 +1517,13 @@ function Zip-Run {
 }
 
 function Close-AdbWindows {
+    $script:AdbOpened = @(@($script:AdbOpened) + @($script:Run.adbOpened) | Where-Object { $_ } | Select-Object -Unique)
     if (-not @($script:AdbOpened).Count) { return }
+    if (-not (Ensure-Login)) { Say '   로그인하지 않아 A/S 연결을 잠그지 못했습니다. 30분 안에 TV가 스스로 잠급니다.' 'Yellow'; return }
     $a = Ask "   이 시험이 연 A/S 연결(adb)을 지금 잠글까요? [Y/n]" 'y'
     if ($a -match '^[nN]') { return }
     foreach ($id in @($script:AdbOpened | Select-Object -Unique)) { $null = Api 'POST' "/api/menuboard/devices/$id/adb" @{ minutes = 0 } }
+    $script:Run | Add-Member -NotePropertyName adbOpened -NotePropertyValue @() -Force; Save-Run
     Say '   A/S 연결을 잠갔습니다(TV가 15초 안에 adb를 끕니다).' 'Green'
 }
 
@@ -1632,6 +1669,10 @@ $outcome = 'quit'
 try { $outcome = Run-Queue $tests }
 finally {
     if ($outcome -eq 'done') { $script:Run.state = 'done'; $script:Run.finished = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') }
+    if ($script:Run.state -ne 'reboot' -and $script:IsWindows) {
+        # 다시 켜기 단계에서 남긴 '로그인 때 이어 하기' 등록을 지운다(시험한 POS기를 그대로 출고해도 창이 뜨지 않게)
+        Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce' -Name 'MenuBoardHwTest' -ErrorAction SilentlyContinue
+    }
     elseif ($script:Run.state -ne 'reboot') { $script:Run.state = 'paused' }
     Save-Run
     try { Close-AdbWindows } catch { }
